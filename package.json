@@ -1,0 +1,32 @@
+{
+  "name": "lhg-lambda-nodejs",
+  "version": "1.0.0",
+  "description": "AWS Lambda Function to process Riot API match endpoint in Node.js upon conclusion of a LHG match",
+  "main": "index.js",
+  "dependencies": {
+    "aws-sdk": "^2.653.0",
+    "hashids": "^2.2.1",
+    "kayn": "^0.10.2",
+    "mysql": "^2.18.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mrdoowan/lhgMatchLambda"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "mysql",
+    "hashids",
+    "kayn",
+    "league of legends",
+    "tournament",
+    "riot API"
+  ],
+  "author": "doowan",
+  "license": "MIT"
+}
