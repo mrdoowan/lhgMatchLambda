@@ -1,26 +1,43 @@
-// Declaring npm modules
+/* 
+    AWS LAMBDA FUNCTION 1: Insert a matchId (and a couple of other parameters) and process its Match Data
+    This function affects the following:
+    - MySQL: [All] MatchStats, PlayerStats, TeamStats, Objectives, BannedChamps
+    - DynamoDB: Match table
+*/
+
+/*  Declaring npm modules */
 const Hashids = require('hashids/cjs'); // For hashing and unhashing
 const mysql = require('mysql'); // Interfacing with mysql DB
 var AWS = require('aws-sdk'); // Interfacing with DynamoDB
 const { Kayn, REGIONS, BasicJSCache } = require('kayn'); // Riot API Wrapper
 
-// Import from other files that are not committed to Github
-// Contact doowan about getting a copy of these files
-const testInputObject = require('./external/test');
+/* 
+    Import from other files that are not committed to Github
+    Contact doowan about getting a copy of these files
+*/
+const inputObjects = require('./external/singularTest');
+//const inputObjects = require('./external/matchIdList');
 const envVars = require('./external/env');
 
-// Global variable constants
+/*  Global variable constants */
 const MINUTE_15 = 15;
 const MINUTE_25 = 25;
-const PUT_INTO_DB = false; // turn 'true' when comfortable to push in
 const PHASE2_BANS = 2;
 const BLUE_ID = 100;
 const RED_ID = 200;
 const SIDE_STRING = { [BLUE_ID]: 'Blue', [RED_ID]: 'Red' };
 const HID_LENGTH = 12;
 const PID_LENGTH = 8;
+const BARON_DURATION_PATCH_CHANGE = '9.23';
+// Baron duration is 3 minutes after this patch, 3.5 minutes before it
+const OLD_BARON_DURATION = 210; // in seconds
+const CURRENT_BARON_DURATION = 180; // in seconds
 
-// Additional configurations
+/*  Put 'false' to test without affecting the databases. */
+const PUT_INTO_DYNAMO = true;       // 'true' when comfortable to push into DynamoDB
+const INSERT_INTO_MYSQL = false;    // 'true' when comfortable to push into MySQL
+
+/*  Configurations of npm modules */
 AWS.config.update({ region: 'us-east-2' });
 var dynamoDB = new AWS.DynamoDB.DocumentClient({ apiVersion: '2012-08-10' });
 const profileHashIds = new Hashids(envVars.PROFILE_HID_SALT, HID_LENGTH); // process.env.PROFILE_HID_SALT
@@ -62,7 +79,7 @@ const sqlPool = mysql.createPool({
     database: envVars.MYSQL_DATABASE_STATS //process.env.MYSQL_DATABASE_STATS
 });
 
-// Main AWS Lambda Function. We'll come back to this later
+/*  Main AWS Lambda Function. We'll come back to this later */
 exports.handler = async (event, context) => {
     
     if ('manual' in event) {
@@ -72,26 +89,55 @@ exports.handler = async (event, context) => {
 };
 
 async function main() {
-    var matchRiotObject = await kayn.Match.get(testInputObject['gameId']);
-    var timelineRiotObject = await kayn.Match.timeline(testInputObject['gameId']);
-    var lhgMatchObject = await createLhgMatchObject(testInputObject, matchRiotObject, timelineRiotObject);
-    console.log(lhgMatchObject['Teams']['100']['Players']);
-    putItemInDynamoDB('Matches', lhgMatchObject);
-    await insertMatchObjectMySql(lhgMatchObject, testInputObject);
-    // The below can happen all concurrently
-    /*
-    putProfileItemDynamoDb();
-    putTeamItemDynamoDb();
-    putTournamentItemDynamoDb();
-    putSeasonItemDynamoDb();
-    */
+    var inputObject = inputObjects[0];
+
+    var matchRiotObject = await kayn.Match.get(inputObject['gameId']);
+    var timelineRiotObject = await kayn.Match.timeline(inputObject['gameId']);
+    var lhgMatchObject = await createLhgMatchObject(inputObject, matchRiotObject, timelineRiotObject);
+    await putMatchDataInDBs(lhgMatchObject, inputObject);
 }
 
 main();
 
-// ----------------------
-// Database Functions
-// ----------------------
+// Returns a Promise
+async function putMatchDataInDBs(lhgMatchObject, inputObject) {
+    return new Promise(function(resolve, reject) {
+        try {
+            // The two belove can occur concurrently
+            putItemInDynamoDB('Matches', lhgMatchObject);
+            insertMatchObjectMySql(lhgMatchObject, inputObject);
+            resolve(0);
+        }
+        catch (err) {
+            reject(err);
+        }
+    });
+}
+
+async function updateOverallDynamoDb() {
+    if (CALC_DYNAMO_DB) {
+        return new Promise(function(resolve, reject) {
+            try {
+                // The below can happen all concurrently
+                /*
+                putProfileItemDynamoDb();
+                putTeamItemDynamoDb();
+                putTournamentItemDynamoDb();
+                */
+                resolve(0);
+            }
+            catch (error) {
+                reject(error);
+            }
+        });
+    }
+}
+
+/*  
+    ----------------------
+    Database Functions
+    ----------------------
+*/
 
 // Successful callback of kayn.timeline from MatchV4
 // With both Jsons, we'll be storing into the DB now
@@ -109,8 +155,8 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
 
     // ----- 2) Create the Match item for DynamoDB
     matchObject = {};
-    matchObject['MatchPId'] = eventInputObject.gameId;
-    matchObject['RiotMatchId'] = eventInputObject.gameId;
+    matchObject['MatchPId'] = eventInputObject.gameId.toString();
+    matchObject['RiotMatchId'] = eventInputObject.gameId.toString();
     matchObject['SeasonPId'] = eventInputObject.seasonPId;
     matchObject['TournamentPId'] = eventInputObject.tournamentPId;
     matchObject['DatePlayed'] = matchRiotObject.gameCreation;
@@ -149,7 +195,7 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
         teamData['Heralds'] = teamRiotObject.riftHeraldKills;
         var phase1BanArr = [];
         var phase2BanArr = [];
-        // For this one, we're going to work backwards from the Array in the riotJson.
+        // We're going to work backwards from the Array in the riotJson.
         // Implementation will take assumption that if there's a ban loss, it is always the first X bans
         // First, we need to sort the array of both team bans
         var teamBansSorted = teamRiotObject.bans.sort((a, b) => (a.pickTurn > b.pickTurn) ? 1 : -1);
@@ -179,100 +225,99 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
         var teamWardsCleared = 0;
         for (j = 0; j < matchRiotObject.participants.length; j++) {
             var playerData = {}
-            var participantObj = matchRiotObject.participants[j];
-            if (participantObj.teamId == teamId) {
-                var partId = participantObj.participantId;
+            var participantRiotObject = matchRiotObject.participants[j];
+            if (participantRiotObject.teamId == teamId) {
+                var partId = participantRiotObject.participantId;
                 teamIdByPartId[partId] = teamId;
-                var pStatsObject = participantObj.stats;
-                pTimelineObj = participantObj.timeline;
-                var profileName = profileObjByChampId[participantObj.championId].name;
+                var pStatsRiotObject = participantRiotObject.stats;
+                var profileName = profileObjByChampId[participantRiotObject.championId].name;
                 //console.log(profileName);
                 playerData['ProfileHId'] = (await getItemInDynamoDB('ProfileNameMap', 'ProfileName', profileName))['ProfileHId'];
                 playerData['ParticipantId'] = partId;
-                var champRole = profileObjByChampId[participantObj.championId].role;
+                var champRole = profileObjByChampId[participantRiotObject.championId].role;
                 playerData['Role'] = champRole;
                 partIdByTeamIdAndRole[teamId][champRole] = partId;
-                playerData['ChampLevel'] = pStatsObject.champLevel;
-                playerData['ChampId'] = participantObj.championId;
-                playerData['Spell1Id'] = participantObj.spell1Id;
-                playerData['Spell2Id'] = participantObj.spell2Id;
-                playerData['Kills'] = pStatsObject.kills;
-                teamKills += pStatsObject.kills;
-                playerData['Deaths'] = pStatsObject.deaths;
-                teamDeaths += pStatsObject.deaths;
-                playerData['Assists'] = pStatsObject.assists;
-                teamAssists += pStatsObject.assists;
-                playerData['Kda'] = ((pStatsObject.kills + pStatsObject.assists) / pStatsObject.deaths).toFixed(2);
-                playerData['Gold'] = pStatsObject.goldEarned;
-                teamGold += pStatsObject.goldEarned;
-                playerData['TotalDamageDealt'] = pStatsObject.totalDamageDealtToChampions;
-                teamDamageDealt += pStatsObject.totalDamageDealtToChampions;
-                playerData['PhysicalDamageDealt'] = pStatsObject.physicalDamageDealtToChampions;
-                playerData['MagicDamageDealt'] = pStatsObject.magicDamageDealtToChampions;
-                playerData['TrueDamageDealt'] = pStatsObject.trueDamageDealtToChampions;
-                var totalCS = pStatsObject.neutralMinionsKilled + pStatsObject.totalMinionsKilled;
+                playerData['ChampLevel'] = pStatsRiotObject.champLevel;
+                playerData['ChampId'] = participantRiotObject.championId;
+                playerData['Spell1Id'] = participantRiotObject.spell1Id;
+                playerData['Spell2Id'] = participantRiotObject.spell2Id;
+                playerData['Kills'] = pStatsRiotObject.kills;
+                teamKills += pStatsRiotObject.kills;
+                playerData['Deaths'] = pStatsRiotObject.deaths;
+                teamDeaths += pStatsRiotObject.deaths;
+                playerData['Assists'] = pStatsRiotObject.assists;
+                teamAssists += pStatsRiotObject.assists;
+                playerData['Kda'] = ((pStatsRiotObject.kills + pStatsRiotObject.assists) / pStatsRiotObject.deaths).toFixed(2);
+                playerData['Gold'] = pStatsRiotObject.goldEarned;
+                teamGold += pStatsRiotObject.goldEarned;
+                playerData['TotalDamageDealt'] = pStatsRiotObject.totalDamageDealtToChampions;
+                teamDamageDealt += pStatsRiotObject.totalDamageDealtToChampions;
+                playerData['PhysicalDamageDealt'] = pStatsRiotObject.physicalDamageDealtToChampions;
+                playerData['MagicDamageDealt'] = pStatsRiotObject.magicDamageDealtToChampions;
+                playerData['TrueDamageDealt'] = pStatsRiotObject.trueDamageDealtToChampions;
+                var totalCS = pStatsRiotObject.neutralMinionsKilled + pStatsRiotObject.totalMinionsKilled;
                 playerData['CreepScore'] = totalCS;
                 teamCreepScore += totalCS;
-                playerData['CsInTeamJungle'] = pStatsObject.neutralMinionsKilledTeamJungle;
-                playerData['CsInEnemyJungle'] = pStatsObject.neutralMinionsKilledEnemyJungle;
-                playerData['VisionScore'] = pStatsObject.visionScore;
-                teamVisionScore += pStatsObject.visionScore;
-                playerData['WardsPlaced'] = pStatsObject.wardsPlaced;
-                teamWardsPlaced += pStatsObject.wardsPlaced;
-                playerData['ControlWardsBought'] = pStatsObject.visionWardsBoughtInGame;
-                teamControlWardsBought += pStatsObject.visionWardsBoughtInGame;
-                playerData['WardsCleared'] = pStatsObject.wardsKilled;
-                teamWardsCleared += pStatsObject.wardsKilled;
+                playerData['CsInTeamJungle'] = pStatsRiotObject.neutralMinionsKilledTeamJungle;
+                playerData['CsInEnemyJungle'] = pStatsRiotObject.neutralMinionsKilledEnemyJungle;
+                playerData['VisionScore'] = pStatsRiotObject.visionScore;
+                teamVisionScore += pStatsRiotObject.visionScore;
+                playerData['WardsPlaced'] = pStatsRiotObject.wardsPlaced;
+                teamWardsPlaced += pStatsRiotObject.wardsPlaced;
+                playerData['ControlWardsBought'] = pStatsRiotObject.visionWardsBoughtInGame;
+                teamControlWardsBought += pStatsRiotObject.visionWardsBoughtInGame;
+                playerData['WardsCleared'] = pStatsRiotObject.wardsKilled;
+                teamWardsCleared += pStatsRiotObject.wardsKilled;
                 playerData['FirstBloodKill'] = false; // Logic in Timeline
                 playerData['FirstBloodAssist'] = false; // Logic in Timeline
                 playerData['FirstBloodVictim'] = false; // Logic in Timeline
-                playerData['FirstTower'] = (pStatsObject.firstTowerKill || pStatsObject.firstTowerAssist);
+                playerData['FirstTower'] = (pStatsRiotObject.firstTowerKill || pStatsRiotObject.firstTowerAssist);
                 playerData['SoloKills'] = 0; // Logic in Timeline
-                playerData['PentaKills'] = pStatsObject.pentaKills;
-                playerData['QuadraKills'] = pStatsObject.quadraKills - pStatsObject.pentaKills;
-                playerData['TripleKills'] = pStatsObject.tripleKills - pStatsObject.quadraKills;
-                playerData['DoubleKills'] = pStatsObject.doubleKills - pStatsObject.tripleKills;
-                playerData['DamageToTurrets'] = pStatsObject.damageDealtToTurrets;
-                playerData['DamageToObjectives'] = pStatsObject.damageDealtToObjectives;
-                playerData['TotalHeal'] = pStatsObject.totalHeal;
-                playerData['TimeCrowdControl'] = pStatsObject.timeCCingOthers;
-                playerData['ItemsFinal'] = [pStatsObject.item0, pStatsObject.item1, 
-                    pStatsObject.item2, pStatsObject.item3, pStatsObject.item4, pStatsObject.item5, pStatsObject.item6];
+                playerData['PentaKills'] = pStatsRiotObject.pentaKills;
+                playerData['QuadraKills'] = pStatsRiotObject.quadraKills - pStatsRiotObject.pentaKills;
+                playerData['TripleKills'] = pStatsRiotObject.tripleKills - pStatsRiotObject.quadraKills;
+                playerData['DoubleKills'] = pStatsRiotObject.doubleKills - pStatsRiotObject.tripleKills;
+                playerData['DamageToTurrets'] = pStatsRiotObject.damageDealtToTurrets;
+                playerData['DamageToObjectives'] = pStatsRiotObject.damageDealtToObjectives;
+                playerData['TotalHeal'] = pStatsRiotObject.totalHeal;
+                playerData['TimeCrowdControl'] = pStatsRiotObject.timeCCingOthers;
+                playerData['ItemsFinal'] = [pStatsRiotObject.item0, pStatsRiotObject.item1, 
+                    pStatsRiotObject.item2, pStatsRiotObject.item3, pStatsRiotObject.item4, pStatsRiotObject.item5, pStatsRiotObject.item6];
                 playerData['ItemBuild'] = {}; // Logic in Timeline
                 // Runes
                 var playerRunes = {}
-                playerRunes['PrimaryPathId'] = pStatsObject.perkPrimaryStyle;
-                playerRunes['PrimaryKeystoneId'] = pStatsObject.perk0;
-                playerRunes['PrimarySlot0Var1'] = pStatsObject.perk0Var1;
-                playerRunes['PrimarySlot0Var2'] = pStatsObject.perk0Var2;
-                playerRunes['PrimarySlot0Var3'] = pStatsObject.perk0Var3;
-                playerRunes['PrimarySlot1Id'] = pStatsObject.perk1;
-                playerRunes['PrimarySlot1Var1'] = pStatsObject.perk1Var1;
-                playerRunes['PrimarySlot1Var2'] = pStatsObject.perk1Var2;
-                playerRunes['PrimarySlot1Var3'] = pStatsObject.perk1Var3;
-                playerRunes['PrimarySlot2Id'] = pStatsObject.perk2;
-                playerRunes['PrimarySlot2Var1'] = pStatsObject.perk2Var1;
-                playerRunes['PrimarySlot2Var2'] = pStatsObject.perk2Var2;
-                playerRunes['PrimarySlot2Var3'] = pStatsObject.perk2Var3;
-                playerRunes['PrimarySlot3Id'] = pStatsObject.perk3;
-                playerRunes['PrimarySlot3Var1'] = pStatsObject.perk3Var1;
-                playerRunes['PrimarySlot3Var2'] = pStatsObject.perk3Var2;
-                playerRunes['PrimarySlot3Var3'] = pStatsObject.perk3Var3;
-                playerRunes['SecondarySlot1Id'] = pStatsObject.perk4;
-                playerRunes['SecondarySlot1Var1'] = pStatsObject.perk4Var1;
-                playerRunes['SecondarySlot1Var2'] = pStatsObject.perk4Var2;
-                playerRunes['SecondarySlot1Var3'] = pStatsObject.perk4Var3;
-                playerRunes['SecondarySlot2Id'] = pStatsObject.perk5;
-                playerRunes['SecondarySlot2Var1'] = pStatsObject.perk5Var1;
-                playerRunes['SecondarySlot2Var2'] = pStatsObject.perk5Var2;
-                playerRunes['SecondarySlot2Var3'] = pStatsObject.perk5Var3;
-                playerRunes['ShardSlot0Id'] = pStatsObject.statPerk0;
-                playerRunes['ShardSlot1Id'] = pStatsObject.statPerk1;
-                playerRunes['ShardSlot2Id'] = pStatsObject.statPerk2;
+                playerRunes['PrimaryPathId'] = pStatsRiotObject.perkPrimaryStyle;
+                playerRunes['PrimaryKeystoneId'] = pStatsRiotObject.perk0;
+                playerRunes['PrimarySlot0Var1'] = pStatsRiotObject.perk0Var1;
+                playerRunes['PrimarySlot0Var2'] = pStatsRiotObject.perk0Var2;
+                playerRunes['PrimarySlot0Var3'] = pStatsRiotObject.perk0Var3;
+                playerRunes['PrimarySlot1Id'] = pStatsRiotObject.perk1;
+                playerRunes['PrimarySlot1Var1'] = pStatsRiotObject.perk1Var1;
+                playerRunes['PrimarySlot1Var2'] = pStatsRiotObject.perk1Var2;
+                playerRunes['PrimarySlot1Var3'] = pStatsRiotObject.perk1Var3;
+                playerRunes['PrimarySlot2Id'] = pStatsRiotObject.perk2;
+                playerRunes['PrimarySlot2Var1'] = pStatsRiotObject.perk2Var1;
+                playerRunes['PrimarySlot2Var2'] = pStatsRiotObject.perk2Var2;
+                playerRunes['PrimarySlot2Var3'] = pStatsRiotObject.perk2Var3;
+                playerRunes['PrimarySlot3Id'] = pStatsRiotObject.perk3;
+                playerRunes['PrimarySlot3Var1'] = pStatsRiotObject.perk3Var1;
+                playerRunes['PrimarySlot3Var2'] = pStatsRiotObject.perk3Var2;
+                playerRunes['PrimarySlot3Var3'] = pStatsRiotObject.perk3Var3;
+                playerRunes['SecondarySlot1Id'] = pStatsRiotObject.perk4;
+                playerRunes['SecondarySlot1Var1'] = pStatsRiotObject.perk4Var1;
+                playerRunes['SecondarySlot1Var2'] = pStatsRiotObject.perk4Var2;
+                playerRunes['SecondarySlot1Var3'] = pStatsRiotObject.perk4Var3;
+                playerRunes['SecondarySlot2Id'] = pStatsRiotObject.perk5;
+                playerRunes['SecondarySlot2Var1'] = pStatsRiotObject.perk5Var1;
+                playerRunes['SecondarySlot2Var2'] = pStatsRiotObject.perk5Var2;
+                playerRunes['SecondarySlot2Var3'] = pStatsRiotObject.perk5Var3;
+                playerRunes['ShardSlot0Id'] = pStatsRiotObject.statPerk0;
+                playerRunes['ShardSlot1Id'] = pStatsRiotObject.statPerk1;
+                playerRunes['ShardSlot2Id'] = pStatsRiotObject.statPerk2;
                 playerData['Runes'] = playerRunes;
                 playerData['SkillOrder'] = []; // Logic in Timeline
                 // Add to playerItem. Phew
-                playerItems[participantObj.participantId] = playerData;
+                playerItems[participantRiotObject.participantId] = playerData;
             }
         }
         teamData['TeamKills'] = teamKills;
@@ -294,14 +339,18 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
     }
     // 2.2) - Timeline
     var timelineList = [];
+    // Each index represents the minute
     var blueKillsAt15 = 0;
     var blueKillsAt25 = 0;
     var redKillsAt15 = 0;
     var redKillsAt25 = 0;
     var firstBloodFound = false;
     var allItemBuilds = {'1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [], '9': [], '10': []};
-    // For the above, we want to first just get the entire list of items being built. 
-    // Then we can add a Key to it.
+    // We want to get the entire list of items being built. Key is the 'participantId'
+    var baronObjectiveMinuteIndex = {};
+    // Since we want to calculate baron power play AFTER the total team gold is calculated,
+    // we want to store which indices in the timelineList each minute and what index in the eventsList
+    // Key: minute -> Value: index in ['Events']
     for (minute = 0; minute < timelineRiotObject.frames.length; minute++) {
         var minuteTimelineItem = {};
         var frameRiotObject = timelineRiotObject.frames[minute];
@@ -356,10 +405,7 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                 }
                 else if (riotEventObject.monsterType == 'BARON_NASHOR') {
                     eventItem['EventType'] = 'Baron';
-                    var baronPP = await computeBaronPowerPlay();
-                    if (baronPP != null) {
-                        eventItem['BaronPowerPlay'] = baronPP;
-                    }
+                    baronObjectiveMinuteIndex[minute] = eventsList.length; // We'll add to eventsList anyways
                 }
                 else if (riotEventObject.monsterType == 'RIFTHERALD') {
                     eventItem['EventType'] = 'Herald';
@@ -373,7 +419,9 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                 eventItem['TeamId'] = riotEventObject.teamId;
                 eventItem['Timestamp'] = riotEventObject.timestamp;
                 eventItem['KillerId'] = riotEventObject.killerId;
-                eventItem['AssistIds'] = riotEventObject.assistingParticipantIds;
+                if (riotEventObject.assistingParticipantIds.length > 0) {
+                    eventItem['AssistIds'] = riotEventObject.assistingParticipantIds;
+                }
                 var getLaneString = {
                     'TOP_LANE': 'Top',
                     'MID_LANE': 'Middle',
@@ -410,6 +458,9 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                 // playerData: Solo Kills
                 if (riotEventObject.assistingParticipantIds.length == 0) {
                     playerItems[killerId]['SoloKills']++;
+                }
+                else {
+                    eventItem['AssistIds'] = riotEventObject.assistingParticipantIds;
                 }
                 // playerData: First Blood
                 if (!firstBloodFound) {
@@ -464,9 +515,14 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                 eventsList.push(eventItem);
             }
         }
-        minuteTimelineItem['Events'] = eventsList;
+        if (eventsList.length > 0) {
+            minuteTimelineItem['Events'] = eventsList;
+        }
         timelineList.push(minuteTimelineItem);
     }
+    // Calculate baron power plays
+    await computeBaronPowerPlay(baronObjectiveMinuteIndex, timelineList, matchObject['GamePatchVersion']);
+    matchObject['Timeline'] = timelineList;
     teamItems[BLUE_ID]['KillsAt15'] = blueKillsAt15;
     teamItems[BLUE_ID]['KillsAt25'] = blueKillsAt25;
     teamItems[RED_ID]['KillsAt15'] = redKillsAt15;
@@ -542,7 +598,6 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
         teamItems[teamId]['Players'][partId] = playerItems[partId];
     }
     matchObject['Teams'] = teamItems;
-    matchObject['Timeline'] = timelineList;
     
     // Return the whole matchObject
     return new Promise (function(resolve) {
@@ -550,9 +605,11 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
     }); 
 }
 
-// Takes the lhg Match Item in Dynamo DB
-// Inserts into LHG's MySQL tables
-// Returns a Promise
+/*  
+    Takes the lhg Match Item in Dynamo DB
+    Inserts into LHG's MySQL tables
+    Returns a Promise
+*/
 async function insertMatchObjectMySql(matchObject, eventInputObject) {
     // 1) MatchStats
     var blueTeamId = getPIdString(teamHashIds, matchObject['Teams'][BLUE_ID]['TeamHId']);
@@ -646,7 +703,7 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                 deaths: playerObject.Deaths,
                 assists: playerObject.Assists,
                 KDA: playerObject.Kda,
-                damageDealtPerMin: (playerObject.TotalDamageDealt / durationByMinute).toFixed(2),
+                dmgDealtPerMin: (playerObject.TotalDamageDealt / durationByMinute).toFixed(2),
                 csPerMin: (playerObject.CreepScore / durationByMinute).toFixed(2),
                 goldPerMin: (playerObject.Gold / durationByMinute).toFixed(2),
                 vsPerMin: (playerObject.VisionScore / durationByMinute).toFixed(2),
@@ -687,32 +744,36 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
     });
     // 3.3) Objectives
     matchObject['Timeline'].forEach(function(minuteObject) {
-        minuteObject['Events'].forEach(function(eventObject) {
-            if (['Tower','Inhibitor','Dragon','Baron','Herald'].includes(eventObject.EventType)) {
-                var insertObjectivesColumn = {
-                    riotMatchId: eventInputObject.gameId,
-                    teamPId: (eventObject.TeamId == BLUE_ID) ? blueTeamId : redTeamId,
-                    objectiveEvent: eventObject.EventType,
-                    timestamp: eventObject.Timestamp
-                };
-                if ('EventCategory' in eventObject) {
-                    insertObjectivesColumn['objectiveCategory'] = eventObject.EventCategory;
+        if ('Events' in minuteObject) {
+            minuteObject['Events'].forEach(function(eventObject) {
+                if (['Tower','Inhibitor','Dragon','Baron','Herald'].includes(eventObject.EventType)) {
+                    var insertObjectivesColumn = {
+                        riotMatchId: eventInputObject.gameId,
+                        teamPId: (eventObject.TeamId == BLUE_ID) ? blueTeamId : redTeamId,
+                        objectiveEvent: eventObject.EventType,
+                        timestamp: eventObject.Timestamp
+                    };
+                    if ('EventCategory' in eventObject) {
+                        insertObjectivesColumn['objectiveCategory'] = eventObject.EventCategory;
+                    }
+                    if ('Lane' in eventObject) {
+                        insertObjectivesColumn['lane'] = eventObject.Lane;
+                    }
+                    if ('BaronPowerPlay' in eventObject) {
+                        insertObjectivesColumn['baronPowerPlay'] = eventObject.BaronPowerPlay;
+                    }
+                    insertMySQLQuery(insertObjectivesColumn, 'Objectives');
                 }
-                if ('Lane' in eventObject) {
-                    insertObjectivesColumn['lane'] = eventObject.Lane;
-                }
-                if ('BaronPowerPlay' in eventObject) {
-                    insertObjectivesColumn['baronPowerPlay'] = eventObject.BaronPowerPlay;
-                }
-                insertMySQLQuery(insertObjectivesColumn, 'Objectives');
-            }
-        });
+            });
+        }
     });
 }
 
-// ----------------------
-// Helper Functions
-// ----------------------
+/*  
+    ----------------------
+    Helper Functions
+    ----------------------
+*/
 
 // Returns a Promise
 function getDDragonVersion(patch) {
@@ -729,13 +790,6 @@ function getDDragonVersion(patch) {
         catch (err) {
             reject(err);
         }
-    });
-}
-
-function computeBaronPowerPlay() {
-    // TODO (Do this later)
-    return new Promise(function(resolve, reject) {
-        resolve("NO U");
     });
 }
 
@@ -756,9 +810,70 @@ function getPIdString(hashIdType, HId) {
     return strPadZeroes(hashIdType.decode(HId)[0], PID_LENGTH);
 }
 
+function updateBaronDuration(thisPatch) {
+    return (isPatch1LaterThanPatch2(thisPatch, BARON_DURATION_PATCH_CHANGE)) ? CURRENT_BARON_DURATION : OLD_BARON_DURATION;
+}
+
+// Assumption: patch1 and patch2 are formatted in "##.##"
+function isPatch1LaterThanPatch2(patch1, patch2) {
+    var patch1Arr = patch1.split('.');
+    var patch2Arr = patch2.split('.');
+    season1 = parseInt(patch1Arr[0]);
+    season2 = parseInt(patch2Arr[0]);
+    version1 = parseInt(patch1Arr[1]);
+    version2 = parseInt(patch2Arr[1]);
+
+    if (season1 < season2) { return false; }
+    else if (season1 > season2) { return true; }
+    return (version1 >= version2) ? true : false;
+}
+
+// Team Gold at the given timestamp. Does a linear approximation in between seconds
+function teamGoldAtTimeStamp(timestamp, timelineList, teamId) {
+    var timeStampMinute = Math.floor(timestamp / 60);
+    var timeStampSeconds = timestamp % 60;
+    if ((timeStampMinute + 1) >= timelineList.length) { return null; }
+
+    // Take team gold at marked minute, and from minute + 1. Average them.
+    var teamGoldAtMinute = (teamId == BLUE_ID) ? timelineList[timeStampMinute]['BlueTeamGold'] : timelineList[timeStampMinute]['RedTeamGold'];
+    var teamGoldAtMinutePlus1 = (teamId == BLUE_ID) ? timelineList[timeStampMinute+1]['BlueTeamGold'] : timelineList[timeStampMinute+1]['RedTeamGold'];
+    var goldPerSecond = (teamGoldAtMinutePlus1 - teamGoldAtMinute) / 60;
+    return (teamGoldAtMinute + Math.floor((goldPerSecond * timeStampSeconds)));
+}
+
+// Returns promise since we want this to be computed first before proceeding
+// Affects timelineList as well
+function computeBaronPowerPlay(baronObjectiveMinuteIndex, timelineList, patch) {
+    // TODO (Do this later)
+    return new Promise(function(resolve, reject) {
+        try {
+            var baronDuration = updateBaronDuration(patch); // in seconds
+            Object.keys(baronObjectiveMinuteIndex).forEach(function(minute) {
+                var eventIndex = baronObjectiveMinuteIndex[minute];
+                var baronEventObject = timelineList[minute]['Events'][eventIndex]; // Make shallow copy and change that
+                var thisTeamId = baronEventObject.TeamId;
+                var oppTeamId = (thisTeamId == BLUE_ID) ? RED_ID : BLUE_ID;
+                var timeStampAtKill = baronEventObject.Timestamp / 1000; // Convert ms -> seconds
+                var teamGoldAtKill = teamGoldAtTimeStamp(timeStampAtKill, timelineList, thisTeamId);
+                var oppGoldAtKill = teamGoldAtTimeStamp(timeStampAtKill, timelineList, oppTeamId);
+                if (teamGoldAtKill == null || oppGoldAtKill == null) { return; }
+                var timeStampAtExpire = timeStampAtKill + baronDuration;
+                var teamGoldAtExpire = teamGoldAtTimeStamp(timeStampAtExpire, timelineList, thisTeamId);
+                var oppGoldAtExpire = teamGoldAtTimeStamp(timeStampAtExpire, timelineList, oppTeamId);
+                if (teamGoldAtExpire == null || oppGoldAtExpire == null) { return; }
+                baronEventObject['BaronPowerPlay'] = (teamGoldAtExpire - teamGoldAtKill) - (oppGoldAtExpire - oppGoldAtKill);
+            });
+            resolve(null);
+        }
+        catch (err) {
+            reject(err);
+        }
+    });
+}
+
 // Returns a promise
 function putItemInDynamoDB(tableName, items) {
-    if (PUT_INTO_DB) {
+    if (PUT_INTO_DYNAMO) {
         var params = {
             TableName: tableName,
             Item: items
@@ -773,9 +888,6 @@ function putItemInDynamoDB(tableName, items) {
                 }
             });
         });
-    }
-    else {
-        console.log("TESTING - Dynamo DB: Put Item into \"" + tableName + "\" Table!")
     }
 }
 
@@ -803,7 +915,7 @@ function getItemInDynamoDB(tableName, keyName, itemName) {
 
 // Returns a Promise
 function insertMySQLQuery(queryObject, tableName) {
-    if (PUT_INTO_DB) {
+    if (INSERT_INTO_MYSQL) {
         var queryStr = 'INSERT INTO ' + tableName + ' (';
         Object.keys(queryObject).forEach(function(columnName) {
             queryStr += (columnName + ',');
@@ -821,19 +933,15 @@ function insertMySQLQuery(queryObject, tableName) {
             sqlPool.getConnection(function(err, connection) {
                 if (err) { reject(err); }
                 connection.query(queryStr, function(error, results, fields) {
-                    console.log("MySQL: Insert Row into Table \"" + tableName + "\"");
                     connection.release();
                     if (error) { reject(error); }
+                    else { 
+                        console.log("MySQL: Insert Row into Table \"" + tableName + 
+                            "\" - Affected " + results.affectedRows + " row(s).");
+                        resolve(results); 
+                    }
                 });
             });
         });
     }
-    else {
-        console.log("TESTING - MySQL: Insert Row into Table \"" + tableName + "\"");
-    }
-}
-
-// Returns a Promise
-function selectMySQLQuery(queryObject, tableName) {
-
 }
