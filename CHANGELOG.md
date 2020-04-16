@@ -1,3 +1,6 @@
+# 0.3.0
+* match.js operational locally. Not yet production ready for AWS.
+
 # 0.2.0
 * Split into 2 separate AWS functions. 
     * match.js: Does what 0.1.0 originally did
