@@ -1,3 +1,7 @@
+# 0.40
+* overall.js update Profile DynamoDB completed
+* match.js added csAt15, csDiff15, csAt25, csDiff25 for TeamStats
+
 # 0.3.0
 * match.js operational locally. Not yet production ready for AWS.
 

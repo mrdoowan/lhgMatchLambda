@@ -34,6 +34,7 @@ const CURRENT_BARON_DURATION = 180; // in seconds
 /*  Put 'false' to test without affecting the databases. */
 const PUT_INTO_DYNAMO = true;       // 'true' when comfortable to push into DynamoDB
 const INSERT_INTO_MYSQL = true;    // 'true' when comfortable to push into MySQL
+/*  Put 'false' to not debug. */
 const DEBUG_DYNAMO = false;
 const DEBUG_MYSQL = false;
 
@@ -258,7 +259,6 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                     teamDeaths += pStatsRiotObject.deaths;
                     playerData['Assists'] = pStatsRiotObject.assists;
                     teamAssists += pStatsRiotObject.assists;
-                    playerData['Kda'] = (pStatsRiotObject.deaths == 0) ? 'Perfect' : ((pStatsRiotObject.kills + pStatsRiotObject.assists) / pStatsRiotObject.deaths).toFixed(2);
                     playerData['Gold'] = pStatsRiotObject.goldEarned;
                     teamGold += pStatsRiotObject.goldEarned;
                     playerData['TotalDamageDealt'] = pStatsRiotObject.totalDamageDealtToChampions;
@@ -385,7 +385,9 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                     (minute == MINUTE_25 && matchRiotObject.gameDuration >= MINUTE_25 * 60)) {
                     playerItems[partId]['GoldAt'+minute] = partFrameRiotObject.totalGold;
                     teamItems[thisTeamId]['GoldAt'+minute] += partFrameRiotObject.totalGold;
-                    playerItems[partId]['CsAt'+minute] = partFrameRiotObject.minionsKilled + partFrameRiotObject.jungleMinionsKilled;
+                    var playerCsAt = partFrameRiotObject.minionsKilled + partFrameRiotObject.jungleMinionsKilled;
+                    playerItems[partId]['CsAt'+minute] = playerCsAt;
+                    teamItems[thisTeamId]['CsAt'+minute] += playerCsAt.
                     playerItems[partId]['XpAt'+minute] = partFrameRiotObject.xp;
                     teamItems[thisTeamId]['XpAt'+minute] += partFrameRiotObject.xp;
                     playerItems[partId]['JungleCsAt'+minute] = partFrameRiotObject.jungleMinionsKilled;
@@ -540,31 +542,37 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
         await computeBaronPowerPlay(baronObjectiveMinuteIndex, timelineList, matchObject['GamePatchVersion']);
         // Timeline completed
         matchObject['Timeline'] = timelineList;
-        // Calculate Diff@15 and 25
+        // Calculate Diff@15 and 25 for Teams
         if (matchRiotObject.gameDuration >= MINUTE_15 * 60) {
             teamItems[BLUE_ID]['KillsAt15'] = blueKillsAt15;
             teamItems[RED_ID]['KillsAt15'] = redKillsAt15;
             var blueKillsDiff15 = blueKillsAt15 - redKillsAt15;
+            var blueTeamGoldDiff15 = teamItems[BLUE_ID]['GoldAt15'] - teamItems[RED_ID]['GoldAt15'];
+            var blueTeamCsDiff15 = teamItems[BLUE_ID]['CsAt15'] - teamItems[RED_ID]['CsAt15'];
+            var blueTeamXpDiff15 = teamItems[BLUE_ID]['XpAt15'] - teamItems[RED_ID]['XpAt15'];
             teamItems[BLUE_ID]['KillsDiff15'] = blueKillsDiff15;
             teamItems[RED_ID]['KillsDiff15'] = (blueKillsDiff15 == 0) ? 0 : (blueKillsDiff15 * -1);
-            var blueTeamGoldDiff15 = teamItems[BLUE_ID]['GoldAt15'] - teamItems[RED_ID]['GoldAt15'];
-            var blueTeamXpDiff15 = teamItems[BLUE_ID]['XpAt15'] - teamItems[RED_ID]['XpAt15'];
             teamItems[BLUE_ID]['GoldDiff15'] = blueTeamGoldDiff15;
-            teamItems[BLUE_ID]['XpDiff15'] = blueTeamXpDiff15;
             teamItems[RED_ID]['GoldDiff15'] = (blueTeamGoldDiff15 == 0) ? 0 : (blueTeamGoldDiff15 * -1);
+            teamItems[BLUE_ID]['CsDiff15'] = blueTeamCsDiff15;
+            teamItems[RED_ID]['CsDiff15'] = (blueTeamCsDiff15 == 0) ? 0 : (blueTeamCsDiff15 * -1);
+            teamItems[BLUE_ID]['XpDiff15'] = blueTeamXpDiff15;
             teamItems[RED_ID]['XpDiff15'] = (blueTeamXpDiff15 == 0) ? 0 : (blueTeamXpDiff15 * -1);
         }
         if (matchRiotObject.gameDuration >= MINUTE_25 * 60) {
             teamItems[BLUE_ID]['KillsAt25'] = blueKillsAt25;
             teamItems[RED_ID]['KillsAt25'] = redKillsAt25;
             var blueKillsDiff25 = blueKillsAt25 - redKillsAt25;
+            var blueTeamGoldDiff25 = teamItems[BLUE_ID]['GoldAt25'] - teamItems[RED_ID]['GoldAt25'];
+            var blueTeamCsDiff25 = teamItems[BLUE_ID]['CsAt25'] - teamItems[RED_ID]['CsAt25'];
+            var blueTeamXpDiff25 = teamItems[BLUE_ID]['XpAt25'] - teamItems[RED_ID]['XpAt25'];
             teamItems[BLUE_ID]['KillsDiff25'] = blueKillsDiff25;
             teamItems[RED_ID]['KillsDiff25'] = (blueKillsDiff25 == 0) ? 0 : (blueKillsDiff25 * -1);
-            var blueTeamGoldDiff25 = teamItems[BLUE_ID]['GoldAt25'] - teamItems[RED_ID]['GoldAt25'];
-            var blueTeamXpDiff25 = teamItems[BLUE_ID]['XpAt25'] - teamItems[RED_ID]['XpAt25'];
             teamItems[BLUE_ID]['GoldDiff25'] = blueTeamGoldDiff25;
-            teamItems[BLUE_ID]['XpDiff25'] = blueTeamXpDiff25;
             teamItems[RED_ID]['GoldDiff25'] = (blueTeamGoldDiff25 == 0) ? 0 : (blueTeamGoldDiff25 * -1);
+            teamItems[BLUE_ID]['CsDiff25'] = blueTeamCsDiff25;
+            teamItems[RED_ID]['CsDiff25'] = (blueTeamCsDiff25 == 0) ? 0 : (blueTeamCsDiff25 * -1);
+            teamItems[BLUE_ID]['XpDiff25'] = blueTeamXpDiff25;
             teamItems[RED_ID]['XpDiff25'] = (blueTeamXpDiff25 == 0) ? 0 : (blueTeamXpDiff25 * -1);
         }
         // playerData['ItemBuild']. Reformat allItemBuilds to have each minute as the key
@@ -585,7 +593,7 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
             });
             playerItems[partId]['ItemBuild'] = playerItemBuild;
         }
-        // Calculate difference based on Roles
+        // Calculate Diff based on Roles for Players
         for (var role in partIdByTeamIdAndRole[BLUE_ID]) {
             bluePartId = partIdByTeamIdAndRole[BLUE_ID][role];
             redPartId = partIdByTeamIdAndRole[RED_ID][role];
@@ -692,6 +700,8 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
             if (matchObject.GameDuration >= MINUTE_15 * 60) {
                 insertTeamStatsColumn['goldAt15'] = teamObject.GoldAt15;
                 insertTeamStatsColumn['goldDiff15'] = teamObject.GoldDiff15;
+                insertTeamStatsColumn['csAt15'] = teamObject.CsAt15;
+                insertTeamStatsColumn['csDiff15'] = teamObject.CsDiff15;
                 insertTeamStatsColumn['xpAt15'] = teamObject.XpAt15;
                 insertTeamStatsColumn['xpDiff15'] = teamObject.XpDiff15;
                 insertTeamStatsColumn['killsAt15'] = teamObject.KillsAt15;
@@ -700,6 +710,8 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
             if (matchObject.GameDuration >= MINUTE_25 * 60) {
                 insertTeamStatsColumn['goldAt25'] = teamObject.GoldAt25;
                 insertTeamStatsColumn['goldDiff25'] = teamObject.GoldDiff25;
+                insertTeamStatsColumn['csAt25'] = teamObject.CsAt25;
+                insertTeamStatsColumn['csDiff25'] = teamObject.CsDiff25;
                 insertTeamStatsColumn['xpAt25'] = teamObject.XpAt25;
                 insertTeamStatsColumn['xpDiff25'] = teamObject.XpDiff25,
                 insertTeamStatsColumn['killsAt25'] = teamObject.KillsAt25;
@@ -759,20 +771,20 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                     pentaKills: playerObject.PentaKills
                 };
                 if (matchObject.GameDuration >= MINUTE_15 * 60) {
-                    insertPlayerStatsColumn['csAt15'] = playerObject.CsAt15;
-                    insertPlayerStatsColumn['csDiff15'] = playerObject.CsDiff15;
                     insertPlayerStatsColumn['goldAt15'] = playerObject.GoldAt15;
                     insertPlayerStatsColumn['goldDiff15'] = playerObject.GoldDiff15;
+                    insertPlayerStatsColumn['csAt15'] = playerObject.CsAt15;
+                    insertPlayerStatsColumn['csDiff15'] = playerObject.CsDiff15;
                     insertPlayerStatsColumn['xpAt15'] = playerObject.XpAt15;
                     insertPlayerStatsColumn['xpDiff15'] = playerObject.XpDiff15;
                     insertPlayerStatsColumn['jungleCsAt15'] = playerObject.JungleCsAt15;
                     insertPlayerStatsColumn['jungleCsDiff15'] = playerObject.JungleCsDiff15;
                 }
                 if (matchObject.GameDuration >= MINUTE_25 * 60) {
-                    insertPlayerStatsColumn['csAt25'] = playerObject.CsAt25;
-                    insertPlayerStatsColumn['csDiff25'] = playerObject.CsDiff25;
                     insertPlayerStatsColumn['goldAt25'] = playerObject.GoldAt25;
                     insertPlayerStatsColumn['goldDiff25'] = playerObject.GoldDiff25;
+                    insertPlayerStatsColumn['csAt25'] = playerObject.CsAt25;
+                    insertPlayerStatsColumn['csDiff25'] = playerObject.CsDiff25;
                     insertPlayerStatsColumn['xpAt25'] = playerObject.XpAt25;
                     insertPlayerStatsColumn['xpDiff25'] = playerObject.XpDiff25;
                     insertPlayerStatsColumn['jungleCsAt25'] = playerObject.JungleCsAt25;
@@ -923,21 +935,16 @@ function putItemInDynamoDB(tableName, items, key) {
             Item: items
         };
         return new Promise(function(resolve, reject) {
-            try {
-                dynamoDB.put(params, function(err, data) {
-                    if (err) {
-                        reject(err);
-                    }
-                    else {
-                        console.log("Dynamo DB: Put Item \'" + key + "\' into \"" + tableName + "\" Table!");
-                        resolve(data);
-                    }
-                });
-            }
-            catch (error) {
-                console.error("ERROR - putItemInDynamoDB \'" + tableName + "\' Promise rejected.");
-                reject(error);
-            }
+            dynamoDB.put(params, function(err, data) {
+                if (err) {
+                    console.error("ERROR - putItemInDynamoDB \'" + tableName + "\' Promise rejected.");
+                    reject(err);
+                }
+                else {
+                    console.log("Dynamo DB: Put Item \'" + key + "\' into \"" + tableName + "\" Table!");
+                    resolve(data);
+                }
+            });
         });
     }
     else {
@@ -1029,7 +1036,7 @@ function insertMySQLQuery(queryObject, tableName) {
                 });
             }
             catch (error) {
-                console.error("ERROR - insertMySQLQuery \'" + tableName + "\' Promise rejected.")
+                console.error("ERROR - insertMySQLQuery \'" + tableName + "\' Promise rejected.");
                 reject(error);
             }
         });
