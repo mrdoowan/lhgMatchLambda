@@ -20,8 +20,8 @@ const inputObjects = require('./external/matchIdList');
 const envVars = require('./external/env');
 
 /*  Global variable constants */
-const MINUTE_15 = 15;
-const MINUTE_25 = 25;
+const MINUTE_AT_EARLY = 15;     // The minute mark where early game has ended. Calculating @ / Diff
+const MINUTE_AT_MID = 25;       // The minute mark where mid game has ended. Calculating @ / Diff
 const PHASE2_BANS = 2;
 const BLUE_ID = 100;
 const RED_ID = 200;
@@ -342,23 +342,23 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
             teamData['TeamControlWardsBought'] = teamControlWardsBought;
             teamData['TeamWardsCleared'] = teamWardsCleared;
             teamData['Players'] = {};   // Merge after
-            if (matchRiotObject.gameDuration >= MINUTE_15 * 60) {
-                teamData['GoldAt15'] = 0;   // Logic in Timeline
-                teamData['XpAt15'] = 0;     // Logic in Timeline
+            if (matchRiotObject.gameDuration >= MINUTE_AT_EARLY * 60) {
+                teamData['GoldAtEarly'] = 0;   // Logic in Timeline
+                teamData['XpAtEarly'] = 0;     // Logic in Timeline
             }
-            if (matchRiotObject.gameDuration >= MINUTE_25 * 60) {
-                teamData['GoldAt25'] = 0;   // Logic in Timeline
-                teamData['XpAt25'] = 0;     // Logic in Timeline
+            if (matchRiotObject.gameDuration >= MINUTE_AT_MID * 60) {
+                teamData['GoldAtMid'] = 0;   // Logic in Timeline
+                teamData['XpAtMid'] = 0;     // Logic in Timeline
             }
             teamItems[teamRiotObject.teamId] = teamData;
         }
         // 2.2) - Timeline
         var timelineList = [];
         // Each index represents the minute
-        var blueKillsAt15 = 0;
-        var blueKillsAt25 = 0;
-        var redKillsAt15 = 0;
-        var redKillsAt25 = 0;
+        var blueKillsAtEarly = 0;
+        var blueKillsAtMid = 0;
+        var redKillsAtEarly = 0;
+        var redKillsAtMid = 0;
         var firstBloodFound = false;
         var allItemBuilds = {'1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [], '9': [], '10': []};
         // We want to get the entire list of items being built. Key is the 'participantId'
@@ -380,17 +380,18 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                 else if (thisTeamId == RED_ID) {
                     redTeamGold += partFrameRiotObject['totalGold'];
                 }
-                // playerData: 15min and 25min
-                if ((minute == MINUTE_15 && matchRiotObject.gameDuration >= MINUTE_15 * 60) || 
-                    (minute == MINUTE_25 && matchRiotObject.gameDuration >= MINUTE_25 * 60)) {
-                    playerItems[partId]['GoldAt'+minute] = partFrameRiotObject.totalGold;
-                    teamItems[thisTeamId]['GoldAt'+minute] += partFrameRiotObject.totalGold;
+                // playerData: EARLY_MINUTE and MID_MINUTE
+                if ((minute == MINUTE_AT_EARLY && matchRiotObject.gameDuration >= MINUTE_AT_EARLY * 60) || 
+                    (minute == MINUTE_AT_MID && matchRiotObject.gameDuration >= MINUTE_AT_MID * 60)) {
+                    var type = (minute == MINUTE_AT_EARLY) ? "Early" : "Mid";
+                    playerItems[partId]['GoldAt'+type] = partFrameRiotObject.totalGold;
+                    teamItems[thisTeamId]['GoldAt'+type] += partFrameRiotObject.totalGold;
                     var playerCsAt = partFrameRiotObject.minionsKilled + partFrameRiotObject.jungleMinionsKilled;
-                    playerItems[partId]['CsAt'+minute] = playerCsAt;
-                    teamItems[thisTeamId]['CsAt'+minute] += playerCsAt.
-                    playerItems[partId]['XpAt'+minute] = partFrameRiotObject.xp;
-                    teamItems[thisTeamId]['XpAt'+minute] += partFrameRiotObject.xp;
-                    playerItems[partId]['JungleCsAt'+minute] = partFrameRiotObject.jungleMinionsKilled;
+                    playerItems[partId]['CsAt'+type] = playerCsAt;
+                    teamItems[thisTeamId]['CsAt'+type] += playerCsAt.
+                    playerItems[partId]['XpAt'+type] = partFrameRiotObject.xp;
+                    teamItems[thisTeamId]['XpAt'+type] += partFrameRiotObject.xp;
+                    playerItems[partId]['JungleCsAt'+type] = partFrameRiotObject.jungleMinionsKilled;
                 }
             }
             minuteTimelineItem['MinuteStamp'] = minute;
@@ -489,14 +490,14 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                         playerItems[victimId]['FirstBloodVictim'] = true;
                         firstBloodFound = true;
                     }
-                    // teamData: 15min and 25min Kills
-                    if (minute < MINUTE_15) {
-                        if (teamId == BLUE_ID) { blueKillsAt15++; }
-                        else if (teamId == RED_ID) { redKillsAt15++; }
+                    // teamData: EARLY_MINUTE and MID_MINUTE Kills
+                    if (minute < MINUTE_AT_EARLY) {
+                        if (teamId == BLUE_ID) { blueKillsAtEarly++; }
+                        else if (teamId == RED_ID) { redKillsAtEarly++; }
                     }
-                    if (minute < MINUTE_25) {
-                        if (teamId == BLUE_ID) { blueKillsAt25++; }
-                        else if (teamId == RED_ID) { redKillsAt25++; }
+                    if (minute < MINUTE_AT_MID) {
+                        if (teamId == BLUE_ID) { blueKillsAtMid++; }
+                        else if (teamId == RED_ID) { redKillsAtMid++; }
                     }
                 }
                 else if (riotEventObject.type == 'ITEM_PURCHASED') {
@@ -542,38 +543,38 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
         await computeBaronPowerPlay(baronObjectiveMinuteIndex, timelineList, matchObject['GamePatchVersion']);
         // Timeline completed
         matchObject['Timeline'] = timelineList;
-        // Calculate Diff@15 and 25 for Teams
-        if (matchRiotObject.gameDuration >= MINUTE_15 * 60) {
-            teamItems[BLUE_ID]['KillsAt15'] = blueKillsAt15;
-            teamItems[RED_ID]['KillsAt15'] = redKillsAt15;
-            var blueKillsDiff15 = blueKillsAt15 - redKillsAt15;
-            var blueTeamGoldDiff15 = teamItems[BLUE_ID]['GoldAt15'] - teamItems[RED_ID]['GoldAt15'];
-            var blueTeamCsDiff15 = teamItems[BLUE_ID]['CsAt15'] - teamItems[RED_ID]['CsAt15'];
-            var blueTeamXpDiff15 = teamItems[BLUE_ID]['XpAt15'] - teamItems[RED_ID]['XpAt15'];
-            teamItems[BLUE_ID]['KillsDiff15'] = blueKillsDiff15;
-            teamItems[RED_ID]['KillsDiff15'] = (blueKillsDiff15 == 0) ? 0 : (blueKillsDiff15 * -1);
-            teamItems[BLUE_ID]['GoldDiff15'] = blueTeamGoldDiff15;
-            teamItems[RED_ID]['GoldDiff15'] = (blueTeamGoldDiff15 == 0) ? 0 : (blueTeamGoldDiff15 * -1);
-            teamItems[BLUE_ID]['CsDiff15'] = blueTeamCsDiff15;
-            teamItems[RED_ID]['CsDiff15'] = (blueTeamCsDiff15 == 0) ? 0 : (blueTeamCsDiff15 * -1);
-            teamItems[BLUE_ID]['XpDiff15'] = blueTeamXpDiff15;
-            teamItems[RED_ID]['XpDiff15'] = (blueTeamXpDiff15 == 0) ? 0 : (blueTeamXpDiff15 * -1);
+        // Calculate Diff@Early and Mid for Teams
+        if (matchRiotObject.gameDuration >= MINUTE_AT_EARLY * 60) {
+            teamItems[BLUE_ID]['KillsAtEarly'] = blueKillsAtEarly;
+            teamItems[RED_ID]['KillsAtEarly'] = redKillsAtEarly;
+            var blueKillsDiffEarly = blueKillsAtEarly - redKillsAtEarly;
+            var blueTeamGoldDiffEarly = teamItems[BLUE_ID]['GoldAtEarly'] - teamItems[RED_ID]['GoldAtEarly'];
+            var blueTeamCsDiffEarly = teamItems[BLUE_ID]['CsAtEarly'] - teamItems[RED_ID]['CsAtEarly'];
+            var blueTeamXpDiffEarly = teamItems[BLUE_ID]['XpAtEarly'] - teamItems[RED_ID]['XpAtEarly'];
+            teamItems[BLUE_ID]['KillsDiffEarly'] = blueKillsDiffEarly;
+            teamItems[RED_ID]['KillsDiffEarly'] = (blueKillsDiffEarly == 0) ? 0 : (blueKillsDiffEarly * -1);
+            teamItems[BLUE_ID]['GoldDiffEarly'] = blueTeamGoldDiffEarly;
+            teamItems[RED_ID]['GoldDiffEarly'] = (blueTeamGoldDiffEarly == 0) ? 0 : (blueTeamGoldDiffEarly * -1);
+            teamItems[BLUE_ID]['CsDiffEarly'] = blueTeamCsDiffEarly;
+            teamItems[RED_ID]['CsDiffEarly'] = (blueTeamCsDiffEarly == 0) ? 0 : (blueTeamCsDiffEarly * -1);
+            teamItems[BLUE_ID]['XpDiffEarly'] = blueTeamXpDiffEarly;
+            teamItems[RED_ID]['XpDiffEarly'] = (blueTeamXpDiffEarly == 0) ? 0 : (blueTeamXpDiffEarly * -1);
         }
-        if (matchRiotObject.gameDuration >= MINUTE_25 * 60) {
-            teamItems[BLUE_ID]['KillsAt25'] = blueKillsAt25;
-            teamItems[RED_ID]['KillsAt25'] = redKillsAt25;
-            var blueKillsDiff25 = blueKillsAt25 - redKillsAt25;
-            var blueTeamGoldDiff25 = teamItems[BLUE_ID]['GoldAt25'] - teamItems[RED_ID]['GoldAt25'];
-            var blueTeamCsDiff25 = teamItems[BLUE_ID]['CsAt25'] - teamItems[RED_ID]['CsAt25'];
-            var blueTeamXpDiff25 = teamItems[BLUE_ID]['XpAt25'] - teamItems[RED_ID]['XpAt25'];
-            teamItems[BLUE_ID]['KillsDiff25'] = blueKillsDiff25;
-            teamItems[RED_ID]['KillsDiff25'] = (blueKillsDiff25 == 0) ? 0 : (blueKillsDiff25 * -1);
-            teamItems[BLUE_ID]['GoldDiff25'] = blueTeamGoldDiff25;
-            teamItems[RED_ID]['GoldDiff25'] = (blueTeamGoldDiff25 == 0) ? 0 : (blueTeamGoldDiff25 * -1);
-            teamItems[BLUE_ID]['CsDiff25'] = blueTeamCsDiff25;
-            teamItems[RED_ID]['CsDiff25'] = (blueTeamCsDiff25 == 0) ? 0 : (blueTeamCsDiff25 * -1);
-            teamItems[BLUE_ID]['XpDiff25'] = blueTeamXpDiff25;
-            teamItems[RED_ID]['XpDiff25'] = (blueTeamXpDiff25 == 0) ? 0 : (blueTeamXpDiff25 * -1);
+        if (matchRiotObject.gameDuration >= MINUTE_AT_MID * 60) {
+            teamItems[BLUE_ID]['KillsAtMid'] = blueKillsAtMid;
+            teamItems[RED_ID]['KillsAtMid'] = redKillsAtMid;
+            var blueKillsDiffMid = blueKillsAtMid - redKillsAtMid;
+            var blueTeamGoldDiffMid = teamItems[BLUE_ID]['GoldAtMid'] - teamItems[RED_ID]['GoldAtMid'];
+            var blueTeamCsDiffMid = teamItems[BLUE_ID]['CsAtMid'] - teamItems[RED_ID]['CsAtMid'];
+            var blueTeamXpDiffMid = teamItems[BLUE_ID]['XpAtMid'] - teamItems[RED_ID]['XpAtMid'];
+            teamItems[BLUE_ID]['KillsDiffMid'] = blueKillsDiffMid;
+            teamItems[RED_ID]['KillsDiffMid'] = (blueKillsDiffMid == 0) ? 0 : (blueKillsDiffMid * -1);
+            teamItems[BLUE_ID]['GoldDiffMid'] = blueTeamGoldDiffMid;
+            teamItems[RED_ID]['GoldDiffMid'] = (blueTeamGoldDiffMid == 0) ? 0 : (blueTeamGoldDiffMid * -1);
+            teamItems[BLUE_ID]['CsDiffMid'] = blueTeamCsDiffMid;
+            teamItems[RED_ID]['CsDiffMid'] = (blueTeamCsDiffMid == 0) ? 0 : (blueTeamCsDiffMid * -1);
+            teamItems[BLUE_ID]['XpDiffMid'] = blueTeamXpDiffMid;
+            teamItems[RED_ID]['XpDiffMid'] = (blueTeamXpDiffMid == 0) ? 0 : (blueTeamXpDiffMid * -1);
         }
         // playerData['ItemBuild']. Reformat allItemBuilds to have each minute as the key
         for (var partId in allItemBuilds) {
@@ -597,33 +598,33 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
         for (var role in partIdByTeamIdAndRole[BLUE_ID]) {
             bluePartId = partIdByTeamIdAndRole[BLUE_ID][role];
             redPartId = partIdByTeamIdAndRole[RED_ID][role];
-            if (matchRiotObject.gameDuration >= MINUTE_15 * 60) {
-                var bluePlayerGoldDiff15 = playerItems[bluePartId].GoldAt15 - playerItems[redPartId].GoldAt15;
-                playerItems[bluePartId]['GoldDiff15'] = bluePlayerGoldDiff15;
-                playerItems[redPartId]['GoldDiff15'] = (bluePlayerGoldDiff15 == 0) ? 0 : (bluePlayerGoldDiff15 * -1);
-                var bluePlayerCsDiff15 = playerItems[bluePartId].CsAt15 - playerItems[redPartId].CsAt15;
-                playerItems[bluePartId]['CsDiff15'] = bluePlayerCsDiff15;
-                playerItems[redPartId]['CsDiff15'] = (bluePlayerCsDiff15 == 0) ? 0 : (bluePlayerCsDiff15 * -1);
-                var bluePlayerXpDiff15 = playerItems[bluePartId].XpAt15 - playerItems[redPartId].XpAt15;
-                playerItems[bluePartId]['XpDiff15'] = bluePlayerXpDiff15;
-                playerItems[redPartId]['XpDiff15'] = (bluePlayerXpDiff15 == 0) ? 0 : (bluePlayerXpDiff15 * -1);
-                var bluePlayerJgCsDiff15 = playerItems[bluePartId].JungleCsAt15 - playerItems[redPartId].JungleCsAt15;
-                playerItems[bluePartId]['JungleCsDiff15'] = bluePlayerJgCsDiff15;
-                playerItems[redPartId]['JungleCsDiff15'] = (bluePlayerJgCsDiff15 == 0) ? 0 : (bluePlayerJgCsDiff15 * -1);
+            if (matchRiotObject.gameDuration >= MINUTE_AT_EARLY * 60) {
+                var bluePlayerGoldDiffEarly = playerItems[bluePartId].GoldAtEarly - playerItems[redPartId].GoldAtEarly;
+                playerItems[bluePartId]['GoldDiffEarly'] = bluePlayerGoldDiffEarly;
+                playerItems[redPartId]['GoldDiffEarly'] = (bluePlayerGoldDiffEarly == 0) ? 0 : (bluePlayerGoldDiffEarly * -1);
+                var bluePlayerCsDiffEarly = playerItems[bluePartId].CsAtEarly - playerItems[redPartId].CsAtEarly;
+                playerItems[bluePartId]['CsDiffEarly'] = bluePlayerCsDiffEarly;
+                playerItems[redPartId]['CsDiffEarly'] = (bluePlayerCsDiffEarly == 0) ? 0 : (bluePlayerCsDiffEarly * -1);
+                var bluePlayerXpDiffEarly = playerItems[bluePartId].XpAtEarly - playerItems[redPartId].XpAtEarly;
+                playerItems[bluePartId]['XpDiffEarly'] = bluePlayerXpDiffEarly;
+                playerItems[redPartId]['XpDiffEarly'] = (bluePlayerXpDiffEarly == 0) ? 0 : (bluePlayerXpDiffEarly * -1);
+                var bluePlayerJgCsDiffEarly = playerItems[bluePartId].JungleCsAtEarly - playerItems[redPartId].JungleCsAtEarly;
+                playerItems[bluePartId]['JungleCsDiffEarly'] = bluePlayerJgCsDiffEarly;
+                playerItems[redPartId]['JungleCsDiffEarly'] = (bluePlayerJgCsDiffEarly == 0) ? 0 : (bluePlayerJgCsDiffEarly * -1);
             }
-            if (matchRiotObject.gameDuration >= MINUTE_25 * 60) {
-                var bluePlayerGoldDiff25 = playerItems[bluePartId].GoldAt25 - playerItems[redPartId].GoldAt25;
-                playerItems[bluePartId]['GoldDiff25'] = bluePlayerGoldDiff25;
-                playerItems[redPartId]['GoldDiff25'] = (bluePlayerGoldDiff25 == 0) ? 0 : (bluePlayerGoldDiff25 * -1);
-                var bluePlayerCsDiff25 = playerItems[bluePartId].CsAt25 - playerItems[redPartId].CsAt25;
-                playerItems[bluePartId]['CsDiff25'] = bluePlayerCsDiff25;
-                playerItems[redPartId]['CsDiff25'] = (bluePlayerCsDiff25 == 0) ? 0 : (bluePlayerCsDiff25 * -1);
-                var bluePlayerXpDiff25 = playerItems[bluePartId].XpAt25 - playerItems[redPartId].XpAt25;
-                playerItems[bluePartId]['XpDiff25'] = bluePlayerXpDiff25;
-                playerItems[redPartId]['XpDiff25'] = (bluePlayerXpDiff25 == 0) ? 0 : (bluePlayerXpDiff25 * -1);
-                var bluePlayerJgCsDiff25 = playerItems[bluePartId].JungleCsAt25 - playerItems[redPartId].JungleCsAt25;
-                playerItems[bluePartId]['JungleCsDiff25'] = bluePlayerJgCsDiff25;
-                playerItems[redPartId]['JungleCsDiff25'] = (bluePlayerJgCsDiff25 == 0) ? 0 : (bluePlayerJgCsDiff25 * -1);
+            if (matchRiotObject.gameDuration >= MINUTE_AT_MID * 60) {
+                var bluePlayerGoldDiffMid = playerItems[bluePartId].GoldAtMid - playerItems[redPartId].GoldAtMid;
+                playerItems[bluePartId]['GoldDiffMid'] = bluePlayerGoldDiffMid;
+                playerItems[redPartId]['GoldDiffMid'] = (bluePlayerGoldDiffMid == 0) ? 0 : (bluePlayerGoldDiffMid * -1);
+                var bluePlayerCsDiffMid = playerItems[bluePartId].CsAtMid - playerItems[redPartId].CsAtMid;
+                playerItems[bluePartId]['CsDiffMid'] = bluePlayerCsDiffMid;
+                playerItems[redPartId]['CsDiffMid'] = (bluePlayerCsDiffMid == 0) ? 0 : (bluePlayerCsDiffMid * -1);
+                var bluePlayerXpDiffMid = playerItems[bluePartId].XpAtMid - playerItems[redPartId].XpAtMid;
+                playerItems[bluePartId]['XpDiffMid'] = bluePlayerXpDiffMid;
+                playerItems[redPartId]['XpDiffMid'] = (bluePlayerXpDiffMid == 0) ? 0 : (bluePlayerXpDiffMid * -1);
+                var bluePlayerJgCsDiffMid = playerItems[bluePartId].JungleCsAtMid - playerItems[redPartId].JungleCsAtMid;
+                playerItems[bluePartId]['JungleCsDiffMid'] = bluePlayerJgCsDiffMid;
+                playerItems[redPartId]['JungleCsDiffMid'] = (bluePlayerJgCsDiffMid == 0) ? 0 : (bluePlayerJgCsDiffMid * -1);
             }
         }
         // 2.3) - Merge teamItem + playerItem (especially with the Diffs)
@@ -697,25 +698,25 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                 totalControlWardsBought: teamObject.TeamControlWardsBought,
                 totalWardsCleared: teamObject.TeamWardsCleared
             };
-            if (matchObject.GameDuration >= MINUTE_15 * 60) {
-                insertTeamStatsColumn['goldAt15'] = teamObject.GoldAt15;
-                insertTeamStatsColumn['goldDiff15'] = teamObject.GoldDiff15;
-                insertTeamStatsColumn['csAt15'] = teamObject.CsAt15;
-                insertTeamStatsColumn['csDiff15'] = teamObject.CsDiff15;
-                insertTeamStatsColumn['xpAt15'] = teamObject.XpAt15;
-                insertTeamStatsColumn['xpDiff15'] = teamObject.XpDiff15;
-                insertTeamStatsColumn['killsAt15'] = teamObject.KillsAt15;
-                insertTeamStatsColumn['killsDiff15'] = teamObject.KillsDiff15;
+            if (matchObject.GameDuration >= MINUTE_AT_EARLY * 60) {
+                insertTeamStatsColumn['goldAtEarly'] = teamObject.GoldAtEarly;
+                insertTeamStatsColumn['goldDiffEarly'] = teamObject.GoldDiffEarly;
+                insertTeamStatsColumn['csAtEarly'] = teamObject.CsAtEarly;
+                insertTeamStatsColumn['csDiffEarly'] = teamObject.CsDiffEarly;
+                insertTeamStatsColumn['xpAtEarly'] = teamObject.XpAtEarly;
+                insertTeamStatsColumn['xpDiffEarly'] = teamObject.XpDiffEarly;
+                insertTeamStatsColumn['killsAtEarly'] = teamObject.KillsAtEarly;
+                insertTeamStatsColumn['killsDiffEarly'] = teamObject.KillsDiffEarly;
             }
-            if (matchObject.GameDuration >= MINUTE_25 * 60) {
-                insertTeamStatsColumn['goldAt25'] = teamObject.GoldAt25;
-                insertTeamStatsColumn['goldDiff25'] = teamObject.GoldDiff25;
-                insertTeamStatsColumn['csAt25'] = teamObject.CsAt25;
-                insertTeamStatsColumn['csDiff25'] = teamObject.CsDiff25;
-                insertTeamStatsColumn['xpAt25'] = teamObject.XpAt25;
-                insertTeamStatsColumn['xpDiff25'] = teamObject.XpDiff25,
-                insertTeamStatsColumn['killsAt25'] = teamObject.KillsAt25;
-                insertTeamStatsColumn['killsDiff25'] = teamObject.KillsDiff25;
+            if (matchObject.GameDuration >= MINUTE_AT_MID * 60) {
+                insertTeamStatsColumn['goldAtMid'] = teamObject.GoldAtMid;
+                insertTeamStatsColumn['goldDiffMid'] = teamObject.GoldDiffMid;
+                insertTeamStatsColumn['csAtMid'] = teamObject.CsAtMid;
+                insertTeamStatsColumn['csDiffMid'] = teamObject.CsDiffMid;
+                insertTeamStatsColumn['xpAtMid'] = teamObject.XpAtMid;
+                insertTeamStatsColumn['xpDiffMid'] = teamObject.XpDiffMid,
+                insertTeamStatsColumn['killsAtMid'] = teamObject.KillsAtMid;
+                insertTeamStatsColumn['killsDiffMid'] = teamObject.KillsDiffMid;
             }
             insertMySQLQuery(insertTeamStatsColumn, 'TeamStats');
             // 2.2) BannedChamps
@@ -770,25 +771,25 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                     quadraKills: playerObject.QuadraKills,
                     pentaKills: playerObject.PentaKills
                 };
-                if (matchObject.GameDuration >= MINUTE_15 * 60) {
-                    insertPlayerStatsColumn['goldAt15'] = playerObject.GoldAt15;
-                    insertPlayerStatsColumn['goldDiff15'] = playerObject.GoldDiff15;
-                    insertPlayerStatsColumn['csAt15'] = playerObject.CsAt15;
-                    insertPlayerStatsColumn['csDiff15'] = playerObject.CsDiff15;
-                    insertPlayerStatsColumn['xpAt15'] = playerObject.XpAt15;
-                    insertPlayerStatsColumn['xpDiff15'] = playerObject.XpDiff15;
-                    insertPlayerStatsColumn['jungleCsAt15'] = playerObject.JungleCsAt15;
-                    insertPlayerStatsColumn['jungleCsDiff15'] = playerObject.JungleCsDiff15;
+                if (matchObject.GameDuration >= MINUTE_AT_EARLY * 60) {
+                    insertPlayerStatsColumn['goldAtEarly'] = playerObject.GoldAtEarly;
+                    insertPlayerStatsColumn['goldDiffEarly'] = playerObject.GoldDiffEarly;
+                    insertPlayerStatsColumn['csAtEarly'] = playerObject.CsAtEarly;
+                    insertPlayerStatsColumn['csDiffEarly'] = playerObject.CsDiffEarly;
+                    insertPlayerStatsColumn['xpAtEarly'] = playerObject.XpAtEarly;
+                    insertPlayerStatsColumn['xpDiffEarly'] = playerObject.XpDiffEarly;
+                    insertPlayerStatsColumn['jungleCsAtEarly'] = playerObject.JungleCsAtEarly;
+                    insertPlayerStatsColumn['jungleCsDiffEarly'] = playerObject.JungleCsDiffEarly;
                 }
-                if (matchObject.GameDuration >= MINUTE_25 * 60) {
-                    insertPlayerStatsColumn['goldAt25'] = playerObject.GoldAt25;
-                    insertPlayerStatsColumn['goldDiff25'] = playerObject.GoldDiff25;
-                    insertPlayerStatsColumn['csAt25'] = playerObject.CsAt25;
-                    insertPlayerStatsColumn['csDiff25'] = playerObject.CsDiff25;
-                    insertPlayerStatsColumn['xpAt25'] = playerObject.XpAt25;
-                    insertPlayerStatsColumn['xpDiff25'] = playerObject.XpDiff25;
-                    insertPlayerStatsColumn['jungleCsAt25'] = playerObject.JungleCsAt25;
-                    insertPlayerStatsColumn['jungleCsDiff25'] = playerObject.JungleCsDiff25;
+                if (matchObject.GameDuration >= MINUTE_AT_MID * 60) {
+                    insertPlayerStatsColumn['goldAtMid'] = playerObject.GoldAtMid;
+                    insertPlayerStatsColumn['goldDiffMid'] = playerObject.GoldDiffMid;
+                    insertPlayerStatsColumn['csAtMid'] = playerObject.CsAtMid;
+                    insertPlayerStatsColumn['csDiffMid'] = playerObject.CsDiffMid;
+                    insertPlayerStatsColumn['xpAtMid'] = playerObject.XpAtMid;
+                    insertPlayerStatsColumn['xpDiffMid'] = playerObject.XpDiffMid;
+                    insertPlayerStatsColumn['jungleCsAtMid'] = playerObject.JungleCsAtMid;
+                    insertPlayerStatsColumn['jungleCsDiffMid'] = playerObject.JungleCsDiffMid;
                 }
                 insertMySQLQuery(insertPlayerStatsColumn, 'PlayerStats');
             }

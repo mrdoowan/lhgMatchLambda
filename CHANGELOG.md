@@ -1,3 +1,7 @@
+# 0.50
+* match.js variables at15 -> atEarly, at25 -> atMid
+* overall.js update Team DynamoDB still in process
+
 # 0.40
 * overall.js update Profile DynamoDB completed
 * match.js added csAt15, csDiff15, csAt25, csDiff25 for TeamStats
