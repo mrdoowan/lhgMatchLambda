@@ -22,9 +22,6 @@ const MINUTE_AT_MID = 25;
 
 /*  Put 'false' to test without affecting the databases. */
 const PUT_INTO_DYNAMO = false;       // 'true' when comfortable to push into DynamoDB
-/*  Put 'false' to not debug. */
-const DEBUG_DYNAMO = false;
-const DEBUG_MYSQL = true;
 
 /*  Configurations of npm modules */
 AWS.config.update({ region: 'us-east-2' });
@@ -77,10 +74,10 @@ async function updateProfileItemDynamoDb(tournamentPId) {
         var tournamentDbObject = await getItemInDynamoDB('Tournament', 'TournamentPId', tournamentPId);
         var seasonPId = tournamentDbObject['SeasonPId'];
         var seasonDbObject = await getItemInDynamoDB('Season', 'SeasonPId', seasonPId);
-        for (var i = 0; i < profileIdsSqlList.length; ++i) {
-        //for (var i = 0; i < 1; ++i) {
-            var profilePId = profileIdsSqlList[i]['profilePId'];
-            //var profilePId = '42338541';
+        //for (var i = 0; i < profileIdsSqlList.length; ++i) {
+        for (var i = 0; i < 1; ++i) {
+            //var profilePId = profileIdsSqlList[i]['profilePId'];
+            var profilePId = '93339240';
             var profileDbObject = await getItemInDynamoDB('Profile', 'ProfilePId', profilePId); // Note this is the current state in code
             /*  
                 -------------------
@@ -125,43 +122,8 @@ async function updateProfileItemDynamoDb(tournamentPId) {
             }
             // Check if 'StatsLog' exists in Profile
             // {MAIN}/profile/<profileName>/stats/<seasonShortName>
-            var initTourneyPIdStats = {
-                'GamesPlayed': 0,
-                'GamesPlayedOverEarly': 0,
-                'GamesPlayedOverMid': 0,
-                'TotalGameDuration': 0,
-                'GamesWin': 0,
-                'TotalKills': 0,
-                'TotalDeaths': 0,
-                'TotalAssists': 0,
-                'TotalCreepScore': 0,
-                'TotalDamage': 0,
-                'TotalGold': 0,
-                'TotalVisionScore': 0,
-                'TotalCsAtEarly': 0,
-                'TotalGoldAtEarly': 0,
-                'TotalXpAtEarly': 0,
-                'TotalCsDiffEarly': 0,
-                'TotalGoldDiffEarly': 0,
-                'TotalXpDiffEarly': 0,
-                'TotalFirstBloods': 0,
-                'TotalFirstTowers': 0,
-                'TotalTeamKills': 0,
-                'TotalTeamDeaths': 0,
-                'TotalTeamDamage': 0,
-                'TotalTeamGold': 0,
-                'TotalTeamVisionScore': 0,
-                'TotalWardsPlaced': 0,
-                'TotalControlWardsBought': 0,
-                'TotalWardsCleared': 0,
-                'TotalSoloKills': 0,
-                'TotalDoubleKills': 0,
-                'TotalTripleKills': 0,
-                'TotalQuadraKills': 0,
-                'TotalPentaKills': 0,
-            };
             var initStatsLog = {
-                [tournamentPId]: initTourneyPIdStats
+                [tournamentPId]: {}
             };
             if (!('StatsLog' in profileDbObject)) {
                 await updateItemInDynamoDB('Profile', 'ProfilePId', profilePId,
@@ -184,10 +146,10 @@ async function updateProfileItemDynamoDb(tournamentPId) {
                         '#tId': tournamentPId
                     },
                     { 
-                        ':val': initTourneyPIdStats 
+                        ':val': {} 
                     }
                 );
-                profileDbObject['StatsLog'][tournamentPId] = initTourneyPIdStats;
+                profileDbObject['StatsLog'][tournamentPId] = {};
             }
             // Check if 'ChampsPlayed' exists in Profile
             if (!('ChampsPlayed' in profileDbObject)) {
@@ -235,39 +197,76 @@ async function updateProfileItemDynamoDb(tournamentPId) {
                         'StatsLog'
                         ----------
                     */
-                    tourneyProfileStatsItem['GamesPlayed']++;
-                    tourneyProfileStatsItem['GamesPlayedOverEarly'] += (sqlPlayerStats.duration >= MINUTE_AT_EARLY * 60);
-                    tourneyProfileStatsItem['GamesPlayedOverMid'] += (sqlPlayerStats.duration >= MINUTE_AT_MID * 60);
-                    tourneyProfileStatsItem['TotalGameDuration'] += sqlPlayerStats.duration;
-                    tourneyProfileStatsItem['GamesWin'] += sqlPlayerStats.win;
-                    tourneyProfileStatsItem['TotalKills'] += sqlPlayerStats.kills;
-                    tourneyProfileStatsItem['TotalDeaths'] += sqlPlayerStats.deaths;
-                    tourneyProfileStatsItem['TotalAssists'] += sqlPlayerStats.assists;
-                    tourneyProfileStatsItem['TotalCreepScore'] += sqlPlayerStats.creepScore;
-                    tourneyProfileStatsItem['TotalDamage'] += sqlPlayerStats.damageDealt;
-                    tourneyProfileStatsItem['TotalGold'] += sqlPlayerStats.gold;
-                    tourneyProfileStatsItem['TotalVisionScore'] += sqlPlayerStats.visionScore;
-                    tourneyProfileStatsItem['TotalCsAtEarly'] += sqlPlayerStats.csAtEarly;
-                    tourneyProfileStatsItem['TotalGoldAtEarly'] += sqlPlayerStats.goldAtEarly;
-                    tourneyProfileStatsItem['TotalXpAtEarly'] += sqlPlayerStats.xpAtEarly;
-                    tourneyProfileStatsItem['TotalCsDiffEarly'] += sqlPlayerStats.csDiffEarly;
-                    tourneyProfileStatsItem['TotalGoldDiffEarly'] += sqlPlayerStats.goldDiffEarly;
-                    tourneyProfileStatsItem['TotalXpDiffEarly'] += sqlPlayerStats.xpDiffEarly;
-                    tourneyProfileStatsItem['TotalFirstBloods'] += (sqlPlayerStats.firstBloodKill + sqlPlayerStats.firstBloodAssist);
-                    tourneyProfileStatsItem['TotalFirstTowers'] += sqlPlayerStats.firstTower;
-                    tourneyProfileStatsItem['TotalTeamKills'] += sqlPlayerStats.teamKills;
-                    tourneyProfileStatsItem['TotalTeamDeaths'] += sqlPlayerStats.teamDeaths;
-                    tourneyProfileStatsItem['TotalTeamDamage'] += sqlPlayerStats.teamDamage;
-                    tourneyProfileStatsItem['TotalTeamGold'] += sqlPlayerStats.teamGold;
-                    tourneyProfileStatsItem['TotalTeamVisionScore'] += sqlPlayerStats.teamVS;
-                    tourneyProfileStatsItem['TotalWardsPlaced'] += sqlPlayerStats.wardsPlaced;
-                    tourneyProfileStatsItem['TotalControlWardsBought'] += sqlPlayerStats.controlWardsBought;
-                    tourneyProfileStatsItem['TotalWardsCleared'] += sqlPlayerStats.wardsCleared;
-                    tourneyProfileStatsItem['TotalSoloKills'] += sqlPlayerStats.soloKills;
-                    tourneyProfileStatsItem['TotalDoubleKills'] += sqlPlayerStats.doubleKills;
-                    tourneyProfileStatsItem['TotalTripleKills'] += sqlPlayerStats.tripleKills;
-                    tourneyProfileStatsItem['TotalQuadraKills'] += sqlPlayerStats.quadraKills;
-                    tourneyProfileStatsItem['TotalPentaKills'] += sqlPlayerStats.pentaKills;
+                    // Check if the Role they played exists
+                    var role = sqlPlayerStats.role;
+                    if (!(role in tourneyProfileStatsItem)) {
+                        tourneyProfileStatsItem[role] = {
+                            'GamesPlayed': 0,
+                            'GamesPlayedOverEarly': 0,
+                            'GamesPlayedOverMid': 0,
+                            'TotalGameDuration': 0,
+                            'GamesWin': 0,
+                            'TotalKills': 0,
+                            'TotalDeaths': 0,
+                            'TotalAssists': 0,
+                            'TotalCreepScore': 0,
+                            'TotalDamage': 0,
+                            'TotalGold': 0,
+                            'TotalVisionScore': 0,
+                            'TotalCsAtEarly': 0,
+                            'TotalGoldAtEarly': 0,
+                            'TotalXpAtEarly': 0,
+                            'TotalCsDiffEarly': 0,
+                            'TotalGoldDiffEarly': 0,
+                            'TotalXpDiffEarly': 0,
+                            'TotalFirstBloods': 0,
+                            'TotalTeamKills': 0,
+                            'TotalTeamDeaths': 0,
+                            'TotalTeamDamage': 0,
+                            'TotalTeamGold': 0,
+                            'TotalTeamVisionScore': 0,
+                            'TotalWardsPlaced': 0,
+                            'TotalControlWardsBought': 0,
+                            'TotalWardsCleared': 0,
+                            'TotalSoloKills': 0,
+                            'TotalDoubleKills': 0,
+                            'TotalTripleKills': 0,
+                            'TotalQuadraKills': 0,
+                            'TotalPentaKills': 0,
+                        };
+                    }
+                    tourneyProfileStatsItem[role]['GamesPlayed']++;
+                    tourneyProfileStatsItem[role]['GamesPlayedOverEarly'] += (sqlPlayerStats.duration >= MINUTE_AT_EARLY * 60);
+                    tourneyProfileStatsItem[role]['GamesPlayedOverMid'] += (sqlPlayerStats.duration >= MINUTE_AT_MID * 60);
+                    tourneyProfileStatsItem[role]['TotalGameDuration'] += sqlPlayerStats.duration;
+                    tourneyProfileStatsItem[role]['GamesWin'] += sqlPlayerStats.win;
+                    tourneyProfileStatsItem[role]['TotalKills'] += sqlPlayerStats.kills;
+                    tourneyProfileStatsItem[role]['TotalDeaths'] += sqlPlayerStats.deaths;
+                    tourneyProfileStatsItem[role]['TotalAssists'] += sqlPlayerStats.assists;
+                    tourneyProfileStatsItem[role]['TotalCreepScore'] += sqlPlayerStats.creepScore;
+                    tourneyProfileStatsItem[role]['TotalDamage'] += sqlPlayerStats.damageDealt;
+                    tourneyProfileStatsItem[role]['TotalGold'] += sqlPlayerStats.gold;
+                    tourneyProfileStatsItem[role]['TotalVisionScore'] += sqlPlayerStats.visionScore;
+                    tourneyProfileStatsItem[role]['TotalCsAtEarly'] += sqlPlayerStats.csAtEarly;
+                    tourneyProfileStatsItem[role]['TotalGoldAtEarly'] += sqlPlayerStats.goldAtEarly;
+                    tourneyProfileStatsItem[role]['TotalXpAtEarly'] += sqlPlayerStats.xpAtEarly;
+                    tourneyProfileStatsItem[role]['TotalCsDiffEarly'] += sqlPlayerStats.csDiffEarly;
+                    tourneyProfileStatsItem[role]['TotalGoldDiffEarly'] += sqlPlayerStats.goldDiffEarly;
+                    tourneyProfileStatsItem[role]['TotalXpDiffEarly'] += sqlPlayerStats.xpDiffEarly;
+                    tourneyProfileStatsItem[role]['TotalFirstBloods'] += (sqlPlayerStats.firstBloodKill + sqlPlayerStats.firstBloodAssist);
+                    tourneyProfileStatsItem[role]['TotalTeamKills'] += sqlPlayerStats.teamKills;
+                    tourneyProfileStatsItem[role]['TotalTeamDeaths'] += sqlPlayerStats.teamDeaths;
+                    tourneyProfileStatsItem[role]['TotalTeamDamage'] += sqlPlayerStats.teamDamage;
+                    tourneyProfileStatsItem[role]['TotalTeamGold'] += sqlPlayerStats.teamGold;
+                    tourneyProfileStatsItem[role]['TotalTeamVisionScore'] += sqlPlayerStats.teamVS;
+                    tourneyProfileStatsItem[role]['TotalWardsPlaced'] += sqlPlayerStats.wardsPlaced;
+                    tourneyProfileStatsItem[role]['TotalControlWardsBought'] += sqlPlayerStats.controlWardsBought;
+                    tourneyProfileStatsItem[role]['TotalWardsCleared'] += sqlPlayerStats.wardsCleared;
+                    tourneyProfileStatsItem[role]['TotalSoloKills'] += sqlPlayerStats.soloKills;
+                    tourneyProfileStatsItem[role]['TotalDoubleKills'] += sqlPlayerStats.doubleKills;
+                    tourneyProfileStatsItem[role]['TotalTripleKills'] += sqlPlayerStats.tripleKills;
+                    tourneyProfileStatsItem[role]['TotalQuadraKills'] += sqlPlayerStats.quadraKills;
+                    tourneyProfileStatsItem[role]['TotalPentaKills'] += sqlPlayerStats.pentaKills;
                     /*  
                         ----------
                         'GameLog'
@@ -279,7 +278,7 @@ async function updateProfileItemDynamoDb(tournamentPId) {
                         'GameWeekNumber': 0, // N/A
                         'TeamHId': teamHashIds.encode(sqlPlayerStats.teamPId),
                         'ChampionPlayed': sqlPlayerStats.champId,
-                        'Role': sqlPlayerStats.role,
+                        'Role': role,
                         'Win': (sqlPlayerStats.win == 1) ? true : false,
                         'Vacated': false,
                         'EnemyTeamHId': teamHashIds.encode((sqlPlayerStats.side === 'Blue') ? sqlPlayerStats.redTeamPId : sqlPlayerStats.blueTeamPId),
@@ -329,7 +328,6 @@ async function updateProfileItemDynamoDb(tournamentPId) {
                     ':data': tourneyProfileStatsItem
                 }
             );
-            console.log(tourneyProfileStatsItem);
         }
     }
     catch (error) {
@@ -448,6 +446,8 @@ async function updateTeamItemDynamoDb(tournamentPId) {
                 'TotalKills': 0,
                 'TotalDeaths': 0,
                 'TotalAssists': 0,
+                'TotalTowersTaken': 0,
+                'TotalTowersLost': 0,
                 'TotalDragonsTaken': 0,
                 'TotalEnemyDragons': 0,
                 'TotalHeraldsTaken': 0,
@@ -533,6 +533,8 @@ async function updateTeamItemDynamoDb(tournamentPId) {
                     tourneyTeamStatsItem['TotalKills'] += sqlTeamStats.totalKills;
                     tourneyTeamStatsItem['TotalDeaths'] += sqlTeamStats.totalDeaths;
                     tourneyTeamStatsItem['TotalAssists'] += sqlTeamStats.totalAssists;
+                    tourneyTeamStatsItem['TotalTowersTaken'] += sqlTeamStats.totalTowers;
+                    tourneyTeamStatsItem['TotalTowersLost'] += sqlTeamStats.oppTowers;
                     tourneyTeamStatsItem['TotalDragonsTaken'] += sqlTeamStats.totalDragons;
                     tourneyTeamStatsItem['TotalEnemyDragons'] += sqlTeamStats.oppDragons;
                     tourneyTeamStatsItem['TotalHeraldsTaken'] += sqlTeamStats.totalHeralds;
@@ -694,7 +696,13 @@ async function updateTeamItemDynamoDb(tournamentPId) {
 
 async function updateTournamentItemDynamoDb(tournamentId) {
     try {
-
+        var tournamentDbObject = await getItemInDynamoDB('Tournament', 'TournamentPId', tournamentId);
+        if (!(tournamentDbObject == undefined)) {
+            
+        }
+        else {
+            console.error("TournamentPId '" + tournamentId + "' doesn't exist in DynamoDB!");
+        }
     }
     catch (error) {
         throw error;
