@@ -6,8 +6,11 @@
 
 /*  Declaring npm modules */
 const Hashids = require('hashids/cjs'); // For hashing and unhashing
-const mysql = require('mysql'); // Interfacing with mysql DB
-var AWS = require('aws-sdk'); // Interfacing with DynamoDB
+
+/*  Import helper function modules */
+const GLOBAL = require('./globals');
+const dynamoDb = require('./dynamoDbHelper');
+const mySql = require('./mySqlHelper');
 
 /* 
     Import from other files that are not committed to Github
@@ -16,26 +19,9 @@ var AWS = require('aws-sdk'); // Interfacing with DynamoDB
 const inputObjects = require('./external/tournamentTest');
 const envVars = require('./external/env');
 
-/*  Global variable constants */
-const MINUTE_AT_EARLY = 15;
-const MINUTE_AT_MID = 25;
-
-/*  Put 'false' to test without affecting the databases. */
-const PUT_INTO_DYNAMO = false;       // 'true' when comfortable to push into DynamoDB
-
 /*  Configurations of npm modules */
-AWS.config.update({ region: 'us-east-2' });
-var dynamoDB = new AWS.DynamoDB.DocumentClient({ apiVersion: '2012-08-10' });
 const profileHashIds = new Hashids(envVars.PROFILE_HID_SALT, envVars.HID_LENGTH); // process.env.PROFILE_HID_SALT
 const teamHashIds = new Hashids(envVars.TEAM_HID_SALT, envVars.HID_LENGTH); // process.env.TEAM_HID_SALT
-const sqlPool = mysql.createPool({
-    connectionLimit: 10,
-    host: envVars.MYSQL_ENDPOINT,       //process.env.MYSQL_ENDPOINT
-    user: envVars.MYSQL_USER,           //process.env.MYSQL_USER
-    password: envVars.MYSQL_PASSWORD,   //process.env.MYSQL_PASSWORD
-    port: envVars.MYSQL_PORT,           //process.env.MYSQL_PORT
-    database: envVars.MYSQL_DATABASE_STATS //process.env.MYSQL_DATABASE_STATS
-});
 
 /*  Main AWS Lambda Function. We'll come back to this later */
 exports.handler = async (event, context) => {
@@ -70,15 +56,15 @@ main();
 */
 async function updateProfileItemDynamoDb(tournamentPId) {
     try {
-        var profileIdsSqlList = await sProcMySqlQuery('profilePIdsByTournamentPId', tournamentPId);
-        var tournamentDbObject = await getItemInDynamoDB('Tournament', 'TournamentPId', tournamentPId);
+        var profileIdsSqlList = await mySql.callSProc('profilePIdsByTournamentPId', tournamentPId);
+        var tournamentDbObject = await dynamoDb.getItem('Tournament', 'TournamentPId', tournamentPId);
         var seasonPId = tournamentDbObject['SeasonPId'];
-        var seasonDbObject = await getItemInDynamoDB('Season', 'SeasonPId', seasonPId);
+        var seasonDbObject = await dynamoDb.getItem('Season', 'SeasonPId', seasonPId);
         //for (var i = 0; i < profileIdsSqlList.length; ++i) {
         for (var i = 0; i < 1; ++i) {
             //var profilePId = profileIdsSqlList[i]['profilePId'];
             var profilePId = '93339240';
-            var profileDbObject = await getItemInDynamoDB('Profile', 'ProfilePId', profilePId); // Note this is the current state in code
+            var profileDbObject = await dynamoDb.getItem('Profile', 'ProfilePId', profilePId); // Note this is the current state in code
             /*  
                 -------------------
                 Init DynamoDB Items
@@ -95,7 +81,7 @@ async function updateProfileItemDynamoDb(tournamentPId) {
             };
             // Check if 'GameLog' exists in Profile
             if (!('GameLog' in profileDbObject)) {
-                await updateItemInDynamoDB('Profile', 'ProfilePId', profilePId,
+                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
                     'SET #gLog = :val',
                     { 
                         '#gLog': 'GameLog'
@@ -108,7 +94,7 @@ async function updateProfileItemDynamoDb(tournamentPId) {
             }
             // Check if that season exists in the GameLogs
             else if (!(seasonPId in profileDbObject['GameLog'])) {
-                await updateItemInDynamoDB('Profile', 'ProfilePId', profilePId,
+                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
                     'SET #gLog.#sId = :val',
                     { 
                         '#gLog': 'GameLog', 
@@ -126,7 +112,7 @@ async function updateProfileItemDynamoDb(tournamentPId) {
                 [tournamentPId]: {}
             };
             if (!('StatsLog' in profileDbObject)) {
-                await updateItemInDynamoDB('Profile', 'ProfilePId', profilePId,
+                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
                     'SET #sLog = :val',
                     { 
                         '#sLog': 'StatsLog'
@@ -139,7 +125,7 @@ async function updateProfileItemDynamoDb(tournamentPId) {
             }
             // Check if that TournamentPId in StatsLog
             if (!(tournamentPId in profileDbObject['StatsLog'])) {
-                await updateItemInDynamoDB('Profile', 'ProfilePId', profilePId,
+                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
                     'SET #sLog.#tId = :val',
                     { 
                         '#sLog': 'GameLog', 
@@ -153,7 +139,7 @@ async function updateProfileItemDynamoDb(tournamentPId) {
             }
             // Check if 'ChampsPlayed' exists in Profile
             if (!('ChampsPlayed' in profileDbObject)) {
-                await updateItemInDynamoDB('Profile', 'ProfilePId', profilePId,
+                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
                     'SET #cPlayed = :val',
                     { 
                         '#cPlayed': 'ChampsPlayed'
@@ -175,7 +161,7 @@ async function updateProfileItemDynamoDb(tournamentPId) {
                 -------------
             */
             // Load each Stat into Profile in tournamentId
-            var matchDataList = await sProcMySqlQuery('playerStatsByTournamentPId', profilePId, tournamentPId);
+            var matchDataList = await mySql.callSProc('playerStatsByTournamentPId', profilePId, tournamentPId);
             for (var j = 0; j < matchDataList.length; ++j) {
                 var sqlPlayerStats = matchDataList[j];
                 var matchPId = sqlPlayerStats.riotMatchId;
@@ -236,8 +222,8 @@ async function updateProfileItemDynamoDb(tournamentPId) {
                         };
                     }
                     tourneyProfileStatsItem[role]['GamesPlayed']++;
-                    tourneyProfileStatsItem[role]['GamesPlayedOverEarly'] += (sqlPlayerStats.duration >= MINUTE_AT_EARLY * 60);
-                    tourneyProfileStatsItem[role]['GamesPlayedOverMid'] += (sqlPlayerStats.duration >= MINUTE_AT_MID * 60);
+                    tourneyProfileStatsItem[role]['GamesPlayedOverEarly'] += (sqlPlayerStats.duration >= GLOBAL.MINUTE_AT_EARLY * 60);
+                    tourneyProfileStatsItem[role]['GamesPlayedOverMid'] += (sqlPlayerStats.duration >= GLOBAL.MINUTE_AT_MID * 60);
                     tourneyProfileStatsItem[role]['TotalGameDuration'] += sqlPlayerStats.duration;
                     tourneyProfileStatsItem[role]['GamesWin'] += sqlPlayerStats.win;
                     tourneyProfileStatsItem[role]['TotalKills'] += sqlPlayerStats.kills;
@@ -295,7 +281,7 @@ async function updateProfileItemDynamoDb(tournamentPId) {
                         'TeamVS': sqlPlayerStats.teamVS,
                     };
                     //gameLogProfileItem[matchPId] = profileGameItem; // Do we need to do this? It's all static
-                    await updateItemInDynamoDB('Profile', 'ProfilePId', profilePId,
+                    await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
                         'SET #log.#sId.#mtch.#mId = :data',
                         {
                             '#log': 'GameLog',
@@ -309,7 +295,7 @@ async function updateProfileItemDynamoDb(tournamentPId) {
                     );
                 }
             }
-            await updateItemInDynamoDB('Profile', 'ProfilePId', profilePId,
+            await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
                 'SET #cPlayed = :val',
                 { 
                     '#cPlayed': 'ChampsPlayed'
@@ -318,7 +304,7 @@ async function updateProfileItemDynamoDb(tournamentPId) {
                     ':val': champsPlayedItem
                 }
             );
-            await updateItemInDynamoDB('Profile', 'ProfilePId', profilePId, 
+            await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId, 
                 'SET #slog.#tId = :data',
                 {
                     '#slog': 'StatsLog',
@@ -337,15 +323,15 @@ async function updateProfileItemDynamoDb(tournamentPId) {
 
 async function updateTeamItemDynamoDb(tournamentPId) {
     try {
-        var teamIdsSqlList = await sProcMySqlQuery('teamPIdsByTournamentPId', tournamentPId);
-        var tournamentDbObject = await getItemInDynamoDB('Tournament', 'TournamentPId', tournamentPId);
+        var teamIdsSqlList = await mySql.callSProc('teamPIdsByTournamentPId', tournamentPId);
+        var tournamentDbObject = await dynamoDb.getItem('Tournament', 'TournamentPId', tournamentPId);
         var seasonPId = tournamentDbObject['SeasonPId'];
-        var seasonDbObject = await getItemInDynamoDB('Season', 'SeasonPId', seasonPId);
+        var seasonDbObject = await dynamoDb.getItem('Season', 'SeasonPId', seasonPId);
         for (var i = 0; i < teamIdsSqlList.length; ++i) {
         //for (var i = 0; i < 1; ++i) {
             var teamPId = teamIdsSqlList[i]['teamPId'];
             //var teamPId = '01930253';
-            var teamDbObject = await getItemInDynamoDB('Team', 'TeamPId', teamPId ); // Note this is the current state in code
+            var teamDbObject = await dynamoDb.getItem('Team', 'TeamPId', teamPId ); // Note this is the current state in code
             /*  
                 -------------------
                 Init DynamoDB Items
@@ -361,7 +347,7 @@ async function updateTeamItemDynamoDb(tournamentPId) {
                 [seasonPId]: initSeasonPIdGames
             };
             if (!('GameLog' in teamDbObject)) {
-                await updateItemInDynamoDB('Team', 'TeamPId', teamPId,
+                await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
                     'SET #gLog = :val',
                     {
                         '#gLog': 'GameLog'
@@ -373,7 +359,7 @@ async function updateTeamItemDynamoDb(tournamentPId) {
                 teamDbObject['GameLog'] = initGameLog;
             }
             else if (!(seasonPId in teamDbObject['GameLog'])) {
-                await updateItemInDynamoDB('Team', 'TeamPId', teamPId,
+                await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
                     'SET #gLog.#sId',
                     {
                         '#gLog': 'GameLog',
@@ -399,7 +385,7 @@ async function updateTeamItemDynamoDb(tournamentPId) {
             }
             var initScouting = { [seasonPId]: initScoutingSeason };
             if (!('Scouting' in teamDbObject)) {
-                await updateItemInDynamoDB('Team', 'TeamPId', teamPId, 
+                await dynamoDb.updateItem('Team', 'TeamPId', teamPId, 
                     'SET #sct = :val',
                     {
                         '#sct': 'Scouting'
@@ -411,7 +397,7 @@ async function updateTeamItemDynamoDb(tournamentPId) {
                 teamDbObject['Scouting'] = initScouting;
             }
             else if (!(seasonPId in teamDbObject['Scouting'])) {
-                await updateItemInDynamoDB('Team', 'TeamPId', teamPId, 
+                await dynamoDb.updateItem('Team', 'TeamPId', teamPId, 
                     'SET #sct.#sId = :val',
                     {
                         '#sct': 'Scouting',
@@ -464,7 +450,7 @@ async function updateTeamItemDynamoDb(tournamentPId) {
                 [tournamentPId]: initTourneyPId
             };
             if (!('StatsLog' in teamDbObject)) {
-                await updateItemInDynamoDB('Team', 'TeamPId', teamPId,
+                await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
                     'SET #sLog = :val',
                     { 
                         '#sLog': 'StatsLog'
@@ -477,7 +463,7 @@ async function updateTeamItemDynamoDb(tournamentPId) {
             }
             // Check if that tournamentId in StatsLog
             if (!(tournamentPId in teamDbObject['StatsLog'])) {
-                await updateItemInDynamoDB('Team', 'TeamPId', teamPId,
+                await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
                     'SET #sLog.#tId = :val',
                     { 
                         '#sLog': 'GameLog', 
@@ -500,22 +486,22 @@ async function updateTeamItemDynamoDb(tournamentPId) {
                 -------------
             */
             // Loop through all the TeamStats in tournamentId
-            var teamStatsSqlListTourney = await sProcMySqlQuery('teamStatsByTournamentPId', teamPId, tournamentPId);
+            var teamStatsSqlListTourney = await mySql.callSProc('teamStatsByTournamentPId', teamPId, tournamentPId);
             for (var j = 0; j < teamStatsSqlListTourney.length; ++j) {
                 var sqlTeamStats = teamStatsSqlListTourney[j];
                 var matchPId = sqlTeamStats.riotMatchId;
                 if (!(matchPId in gameLogTeamItem)) {
                     // Additional sProcs from MySQL
-                    var playerStatsSqlList = await sProcMySqlQuery('playerStatsByMatchIdTeamId', sqlTeamStats.riotMatchId, teamPId);
-                    var bannedChampSqlList = await sProcMySqlQuery('bannedChampsByMatchId', matchPId);
+                    var playerStatsSqlList = await mySql.callSProc('playerStatsByMatchIdTeamId', sqlTeamStats.riotMatchId, teamPId);
+                    var bannedChampSqlList = await mySql.callSProc('bannedChampsByMatchId', matchPId);
                     /*  
                         -------------
                         'StatsLog'
                         -------------
                     */
                     tourneyTeamStatsItem['GamesPlayed']++;
-                    tourneyTeamStatsItem['GamesPlayedOverEarly'] += (sqlTeamStats.duration >= MINUTE_AT_EARLY * 60);
-                    tourneyTeamStatsItem['GamesPlayedOverMid'] += (sqlTeamStats.duration >= MINUTE_AT_MID * 60);
+                    tourneyTeamStatsItem['GamesPlayedOverEarly'] += (sqlTeamStats.duration >= GLOBAL.MINUTE_AT_EARLY * 60);
+                    tourneyTeamStatsItem['GamesPlayedOverMid'] += (sqlTeamStats.duration >= GLOBAL.MINUTE_AT_MID * 60);
                     tourneyTeamStatsItem['GamesWon'] += sqlTeamStats.win;
                     tourneyTeamStatsItem['GamesPlayedOnBlue'] += (sqlTeamStats.side === 'Blue');
                     tourneyTeamStatsItem['BlueWins'] += (sqlTeamStats.win && (sqlTeamStats.side === 'Blue'));
@@ -653,7 +639,7 @@ async function updateTeamItemDynamoDb(tournamentPId) {
                         }
                     }
                     //gameLogTeamItem[matchPId] = teamGameItem; // Do we need to do this? It's all static
-                    await updateItemInDynamoDB('Team', 'TeamPId', teamPId,
+                    await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
                         'SET #gLog.#sId.#mtch.#mId = :val',
                         {
                             '#gLog': 'GameLog',
@@ -667,7 +653,7 @@ async function updateTeamItemDynamoDb(tournamentPId) {
                     );
                 }
             }
-            await updateItemInDynamoDB('Team', 'TeamPId', teamPId, 
+            await dynamoDb.updateItem('Team', 'TeamPId', teamPId, 
                 'SET #sct.#sId = :val',
                 {
                     '#sct': 'Scouting',
@@ -677,7 +663,7 @@ async function updateTeamItemDynamoDb(tournamentPId) {
                     ':val': scoutingItem
                 }
             );
-            updateItemInDynamoDB('Team', 'TeamPId', teamPId,
+            dynamoDb.updateItem('Team', 'TeamPId', teamPId,
                 'SET #sLog.#tId = :val',
                 {
                     '#sLog': 'StatsLog',
@@ -696,7 +682,7 @@ async function updateTeamItemDynamoDb(tournamentPId) {
 
 async function updateTournamentItemDynamoDb(tournamentId) {
     try {
-        var tournamentDbObject = await getItemInDynamoDB('Tournament', 'TournamentPId', tournamentId);
+        var tournamentDbObject = await dynamoDb.getItem('Tournament', 'TournamentPId', tournamentId);
         if (!(tournamentDbObject == undefined)) {
             
         }
@@ -706,94 +692,5 @@ async function updateTournamentItemDynamoDb(tournamentId) {
     }
     catch (error) {
         throw error;
-    }
-}
-
-/*  
-    ----------------------
-    Helper Functions
-    ----------------------
-*/
-
-// Returns a Promise
-function sProcMySqlQuery(sProcName) {
-    var argArr = arguments; // Because arguments gets replaced by the function below
-    return new Promise(function(resolve, reject) {
-        try {
-            var queryStr = "CALL " + sProcName + "(";
-            for (var i = 1; i < argArr.length; ++i) {
-                var arg = argArr[i];
-                arg = (typeof arg === "string") ? '\'' + arg + '\'' : arg;
-                queryStr += arg + ",";
-            }
-            if (argArr.length > 1) {
-                queryStr = queryStr.slice(0, -1); // trimEnd of last comma
-            }
-            queryStr += ");";
-
-            sqlPool.getConnection(function(err, connection) {
-                if (err) { reject(err); }
-                connection.query(queryStr, function(error, results, fields) {
-                    connection.release();
-                    if (error) { reject(error); }
-                    console.log("MySQL: Called SProc \"" + sProcName + "\" with params '" + Array.from(argArr).slice(1) + "'");
-                    resolve(results[0]);
-                    // Returns an Array of 'RowDataPacket'
-                });
-            });
-        }
-        catch (error) {
-            console.error("ERROR - sProcMySqlQuery \'" + sProcName + "\' Promise rejected.");
-            reject(error);
-        }
-    });
-}
-
-// Returns a Promise
-function getItemInDynamoDB(tableName, partitionName, key) {
-    var params = {
-        TableName: tableName,
-        Key: {
-            [partitionName]: key
-        }
-    };
-    return new Promise(function(resolve, reject) {
-        dynamoDB.get(params, function(err, data) {
-            if (err) { 
-                console.error("ERROR - getItemInDynamoDB \'" + tableName + "\' Promise rejected.")
-                reject(err); 
-            }
-            else {
-                console.log("Dynamo DB: Get Item \'" + key + "\' from Table \"" + tableName + "\"");
-                resolve(data['Item']); 
-            }
-        });
-    });
-}
-
-// Returns a Promise
-function updateItemInDynamoDB(tableName, partitionName, key, updateExp, expAttNames, expAttValues) {
-    var params = {
-        TableName: tableName,
-        Key: {
-            [partitionName]: key
-        },
-        UpdateExpression: updateExp,
-        ExpressionAttributeNames: expAttNames,
-        ExpressionAttributeValues: expAttValues
-    };
-    if (PUT_INTO_DYNAMO) {
-        return new Promise(function(resolve, reject) {
-            dynamoDB.update(params, function(err, data) {
-                if (err) {
-                    console.error("ERROR - updateItemInDynamoDB \'" + tableName + "\' Promise rejected.")
-                    reject(err); 
-                }
-                else {
-                    console.log("Dynamo DB: Update Item \'" + key + "\' in Table \"" + tableName + "\"");
-                    resolve(data);
-                }
-            });
-        });
     }
 }

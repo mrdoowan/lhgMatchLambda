@@ -7,8 +7,6 @@
 
 /*  Declaring npm modules */
 const Hashids = require('hashids/cjs'); // For hashing and unhashing
-const mysql = require('mysql'); // Interfacing with mysql DB
-var AWS = require('aws-sdk'); // Interfacing with DynamoDB
 const { Kayn, REGIONS, BasicJSCache } = require('kayn'); // Riot API Wrapper
 
 /* 
@@ -19,28 +17,12 @@ const { Kayn, REGIONS, BasicJSCache } = require('kayn'); // Riot API Wrapper
 const inputObjects = require('./external/matchIdList');
 const envVars = require('./external/env');
 
-/*  Global variable constants */
-const MINUTE_AT_EARLY = 15;     // The minute mark where early game has ended. Calculating @ / Diff
-const MINUTE_AT_MID = 25;       // The minute mark where mid game has ended. Calculating @ / Diff
-const PHASE2_BANS = 2;
-const BLUE_ID = 100;
-const RED_ID = 200;
-const SIDE_STRING = { [BLUE_ID]: 'Blue', [RED_ID]: 'Red' };
-const BARON_DURATION_PATCH_CHANGE = '9.23';
-// Baron duration is 3 minutes after this patch, 3.5 minutes before it
-const OLD_BARON_DURATION = 210; // in seconds
-const CURRENT_BARON_DURATION = 180; // in seconds
-
-/*  Put 'false' to test without affecting the databases. */
-const PUT_INTO_DYNAMO = true;       // 'true' when comfortable to push into DynamoDB
-const INSERT_INTO_MYSQL = true;    // 'true' when comfortable to push into MySQL
-/*  Put 'false' to not debug. */
-const DEBUG_DYNAMO = false;
-const DEBUG_MYSQL = false;
+/*  Import helper function modules */
+const GLOBAL = require('./globals');
+const dynamoDb = require('./dynamoDbHelper');
+const mySql = require('./mySqlHelper');
 
 /*  Configurations of npm modules */
-AWS.config.update({ region: 'us-east-2' });
-var dynamoDB = new AWS.DynamoDB.DocumentClient({ apiVersion: '2012-08-10' });
 const profileHashIds = new Hashids(envVars.PROFILE_HID_SALT, envVars.HID_LENGTH); // process.env.PROFILE_HID_SALT, process.env.HID_LENGTH
 const teamHashIds = new Hashids(envVars.TEAM_HID_SALT, envVars.HID_LENGTH); // process.env.TEAM_HID_SALT,
 const kaynCache = new BasicJSCache();
@@ -71,14 +53,6 @@ const kayn = Kayn(envVars.RIOT_API_KEY)({ // process.env.RIOT_API_KEY
         },
     },
 });
-const sqlPool = mysql.createPool({
-    connectionLimit: 10,
-    host: envVars.MYSQL_ENDPOINT,       //process.env.MYSQL_ENDPOINT
-    user: envVars.MYSQL_USER,           //process.env.MYSQL_USER
-    password: envVars.MYSQL_PASSWORD,   //process.env.MYSQL_PASSWORD
-    port: envVars.MYSQL_PORT,           //process.env.MYSQL_PORT
-    database: envVars.MYSQL_DATABASE_STATS //process.env.MYSQL_DATABASE_STATS
-});
 
 /*  Main AWS Lambda Function. We'll come back to this later */
 exports.handler = async (event, context) => {
@@ -94,7 +68,7 @@ async function main() {
         for (var i = 0; i < inputObjects.length; ++i) {
             var inputObject = inputObjects[i];
             // Check if MatchPId is already in DynamoDB
-            if (!(await doesItemExistInDynamoDB("Matches", "MatchPId", inputObject['gameId'].toString()))) {
+            if (!(await dynamoDb.doesItemExist("Matches", "MatchPId", inputObject['gameId'].toString()))) {
                 console.log("Processing new match ID: " + inputObject['gameId']);
                 var matchRiotObject = await kayn.Match.get(inputObject['gameId']);
                 var timelineRiotObject = await kayn.Match.timeline(inputObject['gameId']);
@@ -121,7 +95,7 @@ function putMatchDataInDBs(lhgMatchObject, inputObject) {
         try {
             await insertMatchObjectMySql(lhgMatchObject, inputObject);
             console.log("MySQL: All data from \'" + lhgMatchObject.MatchPId + "\' inserted.");
-            await putItemInDynamoDB('Matches', lhgMatchObject, lhgMatchObject.MatchPId);
+            await dynamoDb.putItem('Matches', lhgMatchObject, lhgMatchObject.MatchPId);
             resolve(0);
         }
         catch (err) {
@@ -188,11 +162,11 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
             var teamData = {};
             var teamId = teamRiotObject.teamId; // 100 == BLUE, 200 == RED
             partIdByTeamIdAndRole[teamId] = {};
-            if (teamId == BLUE_ID) {
-                teamData['TeamHId'] = (await getItemInDynamoDB('TeamNameMap', 'TeamName', eventInputObject.blueTeamName.toLowerCase().replace(/ /g, '')))['TeamHId'];
+            if (teamId == GLOBAL.BLUE_ID) {
+                teamData['TeamHId'] = (await dynamoDb.getItem('TeamNameMap', 'TeamName', eventInputObject.blueTeamName.toLowerCase().replace(/ /g, '')))['TeamHId'];
             }
-            else if (teamId == RED_ID) {
-                teamData['TeamHId'] = (await getItemInDynamoDB('TeamNameMap', 'TeamName', eventInputObject.redTeamName.toLowerCase().replace(/ /g, '')))['TeamHId'];
+            else if (teamId == GLOBAL.RED_ID) {
+                teamData['TeamHId'] = (await dynamoDb.getItem('TeamNameMap', 'TeamName', eventInputObject.redTeamName.toLowerCase().replace(/ /g, '')))['TeamHId'];
             }
             if (teamRiotObject.win == 'Win') {
                 teamData['Win'] = true;
@@ -214,7 +188,7 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
             for (j = 0; j < teamBansSorted.length; j++) {
                 var riotObjIdx = teamBansSorted.length - j - 1; // Start at end of index
                 var banObj = teamBansSorted[riotObjIdx];
-                if (j < PHASE2_BANS) {
+                if (j < GLOBAL.PHASE2_BANS) {
                     phase2BanArr.unshift(banObj.championId);
                 }
                 else {
@@ -244,7 +218,7 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                     var pStatsRiotObject = participantRiotObject.stats;
                     var profileName = profileObjByChampId[participantRiotObject.championId].name;
                     //console.log(profileName);
-                    playerData['ProfileHId'] = (await getItemInDynamoDB('ProfileNameMap', 'ProfileName', profileName.toLowerCase().replace(/ /g, '')))['ProfileHId'];
+                    playerData['ProfileHId'] = (await dynamoDb.getItem('ProfileNameMap', 'ProfileName', profileName.toLowerCase().replace(/ /g, '')))['ProfileHId'];
                     playerData['ParticipantId'] = partId;
                     var champRole = profileObjByChampId[participantRiotObject.championId].role;
                     playerData['Role'] = champRole;
@@ -342,11 +316,11 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
             teamData['TeamControlWardsBought'] = teamControlWardsBought;
             teamData['TeamWardsCleared'] = teamWardsCleared;
             teamData['Players'] = {};   // Merge after
-            if (matchRiotObject.gameDuration >= MINUTE_AT_EARLY * 60) {
+            if (matchRiotObject.gameDuration >= GLOBAL.MINUTE_AT_EARLY * 60) {
                 teamData['GoldAtEarly'] = 0;   // Logic in Timeline
                 teamData['XpAtEarly'] = 0;     // Logic in Timeline
             }
-            if (matchRiotObject.gameDuration >= MINUTE_AT_MID * 60) {
+            if (matchRiotObject.gameDuration >= GLOBAL.MINUTE_AT_MID * 60) {
                 teamData['GoldAtMid'] = 0;   // Logic in Timeline
                 teamData['XpAtMid'] = 0;     // Logic in Timeline
             }
@@ -374,16 +348,16 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
             for (var partId in frameRiotObject.participantFrames) {
                 var thisTeamId = teamIdByPartId[partId];
                 var partFrameRiotObject = frameRiotObject.participantFrames[partId];
-                if (thisTeamId == BLUE_ID) {
+                if (thisTeamId == GLOBAL.BLUE_ID) {
                     blueTeamGold += partFrameRiotObject['totalGold'];
                 }
-                else if (thisTeamId == RED_ID) {
+                else if (thisTeamId == GLOBAL.RED_ID) {
                     redTeamGold += partFrameRiotObject['totalGold'];
                 }
                 // playerData: EARLY_MINUTE and MID_MINUTE
-                if ((minute == MINUTE_AT_EARLY && matchRiotObject.gameDuration >= MINUTE_AT_EARLY * 60) || 
-                    (minute == MINUTE_AT_MID && matchRiotObject.gameDuration >= MINUTE_AT_MID * 60)) {
-                    var type = (minute == MINUTE_AT_EARLY) ? "Early" : "Mid";
+                if ((minute == GLOBAL.MINUTE_AT_EARLY && matchRiotObject.gameDuration >= GLOBAL.MINUTE_AT_EARLY * 60) || 
+                    (minute == GLOBAL.MINUTE_AT_MID && matchRiotObject.gameDuration >= GLOBAL.MINUTE_AT_MID * 60)) {
+                    var type = (minute == GLOBAL.MINUTE_AT_EARLY) ? "Early" : "Mid";
                     playerItems[partId]['GoldAt'+type] = partFrameRiotObject.totalGold;
                     teamItems[thisTeamId]['GoldAt'+type] += partFrameRiotObject.totalGold;
                     var playerCsAt = partFrameRiotObject.minionsKilled + partFrameRiotObject.jungleMinionsKilled;
@@ -491,13 +465,13 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                         firstBloodFound = true;
                     }
                     // teamData: EARLY_MINUTE and MID_MINUTE Kills
-                    if (minute < MINUTE_AT_EARLY) {
-                        if (teamId == BLUE_ID) { blueKillsAtEarly++; }
-                        else if (teamId == RED_ID) { redKillsAtEarly++; }
+                    if (minute < GLOBAL.MINUTE_AT_EARLY) {
+                        if (teamId == GLOBAL.BLUE_ID) { blueKillsAtEarly++; }
+                        else if (teamId == GLOBAL.RED_ID) { redKillsAtEarly++; }
                     }
-                    if (minute < MINUTE_AT_MID) {
-                        if (teamId == BLUE_ID) { blueKillsAtMid++; }
-                        else if (teamId == RED_ID) { redKillsAtMid++; }
+                    if (minute < GLOBAL.MINUTE_AT_MID) {
+                        if (teamId == GLOBAL.BLUE_ID) { blueKillsAtMid++; }
+                        else if (teamId == GLOBAL.RED_ID) { redKillsAtMid++; }
                     }
                 }
                 else if (riotEventObject.type == 'ITEM_PURCHASED') {
@@ -544,37 +518,37 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
         // Timeline completed
         matchObject['Timeline'] = timelineList;
         // Calculate Diff@Early and Mid for Teams
-        if (matchRiotObject.gameDuration >= MINUTE_AT_EARLY * 60) {
-            teamItems[BLUE_ID]['KillsAtEarly'] = blueKillsAtEarly;
-            teamItems[RED_ID]['KillsAtEarly'] = redKillsAtEarly;
+        if (matchRiotObject.gameDuration >= GLOBAL.MINUTE_AT_EARLY * 60) {
+            teamItems[GLOBAL.BLUE_ID]['KillsAtEarly'] = blueKillsAtEarly;
+            teamItems[GLOBAL.RED_ID]['KillsAtEarly'] = redKillsAtEarly;
             var blueKillsDiffEarly = blueKillsAtEarly - redKillsAtEarly;
-            var blueTeamGoldDiffEarly = teamItems[BLUE_ID]['GoldAtEarly'] - teamItems[RED_ID]['GoldAtEarly'];
-            var blueTeamCsDiffEarly = teamItems[BLUE_ID]['CsAtEarly'] - teamItems[RED_ID]['CsAtEarly'];
-            var blueTeamXpDiffEarly = teamItems[BLUE_ID]['XpAtEarly'] - teamItems[RED_ID]['XpAtEarly'];
-            teamItems[BLUE_ID]['KillsDiffEarly'] = blueKillsDiffEarly;
-            teamItems[RED_ID]['KillsDiffEarly'] = (blueKillsDiffEarly == 0) ? 0 : (blueKillsDiffEarly * -1);
-            teamItems[BLUE_ID]['GoldDiffEarly'] = blueTeamGoldDiffEarly;
-            teamItems[RED_ID]['GoldDiffEarly'] = (blueTeamGoldDiffEarly == 0) ? 0 : (blueTeamGoldDiffEarly * -1);
-            teamItems[BLUE_ID]['CsDiffEarly'] = blueTeamCsDiffEarly;
-            teamItems[RED_ID]['CsDiffEarly'] = (blueTeamCsDiffEarly == 0) ? 0 : (blueTeamCsDiffEarly * -1);
-            teamItems[BLUE_ID]['XpDiffEarly'] = blueTeamXpDiffEarly;
-            teamItems[RED_ID]['XpDiffEarly'] = (blueTeamXpDiffEarly == 0) ? 0 : (blueTeamXpDiffEarly * -1);
+            var blueTeamGoldDiffEarly = teamItems[GLOBAL.BLUE_ID]['GoldAtEarly'] - teamItems[GLOBAL.RED_ID]['GoldAtEarly'];
+            var blueTeamCsDiffEarly = teamItems[GLOBAL.BLUE_ID]['CsAtEarly'] - teamItems[GLOBAL.RED_ID]['CsAtEarly'];
+            var blueTeamXpDiffEarly = teamItems[GLOBAL.BLUE_ID]['XpAtEarly'] - teamItems[GLOBAL.RED_ID]['XpAtEarly'];
+            teamItems[GLOBAL.BLUE_ID]['KillsDiffEarly'] = blueKillsDiffEarly;
+            teamItems[GLOBAL.RED_ID]['KillsDiffEarly'] = (blueKillsDiffEarly == 0) ? 0 : (blueKillsDiffEarly * -1);
+            teamItems[GLOBAL.BLUE_ID]['GoldDiffEarly'] = blueTeamGoldDiffEarly;
+            teamItems[GLOBAL.RED_ID]['GoldDiffEarly'] = (blueTeamGoldDiffEarly == 0) ? 0 : (blueTeamGoldDiffEarly * -1);
+            teamItems[GLOBAL.BLUE_ID]['CsDiffEarly'] = blueTeamCsDiffEarly;
+            teamItems[GLOBAL.RED_ID]['CsDiffEarly'] = (blueTeamCsDiffEarly == 0) ? 0 : (blueTeamCsDiffEarly * -1);
+            teamItems[GLOBAL.BLUE_ID]['XpDiffEarly'] = blueTeamXpDiffEarly;
+            teamItems[GLOBAL.RED_ID]['XpDiffEarly'] = (blueTeamXpDiffEarly == 0) ? 0 : (blueTeamXpDiffEarly * -1);
         }
-        if (matchRiotObject.gameDuration >= MINUTE_AT_MID * 60) {
-            teamItems[BLUE_ID]['KillsAtMid'] = blueKillsAtMid;
-            teamItems[RED_ID]['KillsAtMid'] = redKillsAtMid;
+        if (matchRiotObject.gameDuration >= GLOBAL.MINUTE_AT_MID * 60) {
+            teamItems[GLOBAL.BLUE_ID]['KillsAtMid'] = blueKillsAtMid;
+            teamItems[GLOBAL.RED_ID]['KillsAtMid'] = redKillsAtMid;
             var blueKillsDiffMid = blueKillsAtMid - redKillsAtMid;
-            var blueTeamGoldDiffMid = teamItems[BLUE_ID]['GoldAtMid'] - teamItems[RED_ID]['GoldAtMid'];
-            var blueTeamCsDiffMid = teamItems[BLUE_ID]['CsAtMid'] - teamItems[RED_ID]['CsAtMid'];
-            var blueTeamXpDiffMid = teamItems[BLUE_ID]['XpAtMid'] - teamItems[RED_ID]['XpAtMid'];
-            teamItems[BLUE_ID]['KillsDiffMid'] = blueKillsDiffMid;
-            teamItems[RED_ID]['KillsDiffMid'] = (blueKillsDiffMid == 0) ? 0 : (blueKillsDiffMid * -1);
-            teamItems[BLUE_ID]['GoldDiffMid'] = blueTeamGoldDiffMid;
-            teamItems[RED_ID]['GoldDiffMid'] = (blueTeamGoldDiffMid == 0) ? 0 : (blueTeamGoldDiffMid * -1);
-            teamItems[BLUE_ID]['CsDiffMid'] = blueTeamCsDiffMid;
-            teamItems[RED_ID]['CsDiffMid'] = (blueTeamCsDiffMid == 0) ? 0 : (blueTeamCsDiffMid * -1);
-            teamItems[BLUE_ID]['XpDiffMid'] = blueTeamXpDiffMid;
-            teamItems[RED_ID]['XpDiffMid'] = (blueTeamXpDiffMid == 0) ? 0 : (blueTeamXpDiffMid * -1);
+            var blueTeamGoldDiffMid = teamItems[GLOBAL.BLUE_ID]['GoldAtMid'] - teamItems[GLOBAL.RED_ID]['GoldAtMid'];
+            var blueTeamCsDiffMid = teamItems[GLOBAL.BLUE_ID]['CsAtMid'] - teamItems[GLOBAL.RED_ID]['CsAtMid'];
+            var blueTeamXpDiffMid = teamItems[GLOBAL.BLUE_ID]['XpAtMid'] - teamItems[GLOBAL.RED_ID]['XpAtMid'];
+            teamItems[GLOBAL.BLUE_ID]['KillsDiffMid'] = blueKillsDiffMid;
+            teamItems[GLOBAL.RED_ID]['KillsDiffMid'] = (blueKillsDiffMid == 0) ? 0 : (blueKillsDiffMid * -1);
+            teamItems[GLOBAL.BLUE_ID]['GoldDiffMid'] = blueTeamGoldDiffMid;
+            teamItems[GLOBAL.RED_ID]['GoldDiffMid'] = (blueTeamGoldDiffMid == 0) ? 0 : (blueTeamGoldDiffMid * -1);
+            teamItems[GLOBAL.BLUE_ID]['CsDiffMid'] = blueTeamCsDiffMid;
+            teamItems[GLOBAL.RED_ID]['CsDiffMid'] = (blueTeamCsDiffMid == 0) ? 0 : (blueTeamCsDiffMid * -1);
+            teamItems[GLOBAL.BLUE_ID]['XpDiffMid'] = blueTeamXpDiffMid;
+            teamItems[GLOBAL.RED_ID]['XpDiffMid'] = (blueTeamXpDiffMid == 0) ? 0 : (blueTeamXpDiffMid * -1);
         }
         // playerData['ItemBuild']. Reformat allItemBuilds to have each minute as the key
         for (var partId in allItemBuilds) {
@@ -595,10 +569,10 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
             playerItems[partId]['ItemBuild'] = playerItemBuild;
         }
         // Calculate Diff based on Roles for Players
-        for (var role in partIdByTeamIdAndRole[BLUE_ID]) {
-            bluePartId = partIdByTeamIdAndRole[BLUE_ID][role];
-            redPartId = partIdByTeamIdAndRole[RED_ID][role];
-            if (matchRiotObject.gameDuration >= MINUTE_AT_EARLY * 60) {
+        for (var role in partIdByTeamIdAndRole[GLOBAL.BLUE_ID]) {
+            bluePartId = partIdByTeamIdAndRole[GLOBAL.BLUE_ID][role];
+            redPartId = partIdByTeamIdAndRole[GLOBAL.RED_ID][role];
+            if (matchRiotObject.gameDuration >= GLOBAL.MINUTE_AT_EARLY * 60) {
                 var bluePlayerGoldDiffEarly = playerItems[bluePartId].GoldAtEarly - playerItems[redPartId].GoldAtEarly;
                 playerItems[bluePartId]['GoldDiffEarly'] = bluePlayerGoldDiffEarly;
                 playerItems[redPartId]['GoldDiffEarly'] = (bluePlayerGoldDiffEarly == 0) ? 0 : (bluePlayerGoldDiffEarly * -1);
@@ -612,7 +586,7 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                 playerItems[bluePartId]['JungleCsDiffEarly'] = bluePlayerJgCsDiffEarly;
                 playerItems[redPartId]['JungleCsDiffEarly'] = (bluePlayerJgCsDiffEarly == 0) ? 0 : (bluePlayerJgCsDiffEarly * -1);
             }
-            if (matchRiotObject.gameDuration >= MINUTE_AT_MID * 60) {
+            if (matchRiotObject.gameDuration >= GLOBAL.MINUTE_AT_MID * 60) {
                 var bluePlayerGoldDiffMid = playerItems[bluePartId].GoldAtMid - playerItems[redPartId].GoldAtMid;
                 playerItems[bluePartId]['GoldDiffMid'] = bluePlayerGoldDiffMid;
                 playerItems[redPartId]['GoldDiffMid'] = (bluePlayerGoldDiffMid == 0) ? 0 : (bluePlayerGoldDiffMid * -1);
@@ -650,55 +624,55 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
 async function insertMatchObjectMySql(matchObject, eventInputObject) {
     try {
         // 1) MatchStats
-        var blueTeamId = getPIdString(teamHashIds, matchObject['Teams'][BLUE_ID]['TeamHId']);
-        var redTeamId = getPIdString(teamHashIds, matchObject['Teams'][RED_ID]['TeamHId']);
+        var blueTeamId = getPIdString(teamHashIds, matchObject['Teams'][GLOBAL.BLUE_ID]['TeamHId']);
+        var redTeamId = getPIdString(teamHashIds, matchObject['Teams'][GLOBAL.RED_ID]['TeamHId']);
         var insertMatchStatsColumn = {
-            riotMatchId: eventInputObject.gameId,
-            seasonPId: eventInputObject.seasonPId,
-            tournamentPId: eventInputObject.tournamentPId,
-            tournamentType: (await getItemInDynamoDB('Tournament', 'TournamentPId', eventInputObject.tournamentPId))['TournamentType'],
-            blueTeamPId: blueTeamId,
-            redTeamPId: redTeamId,
-            duration: matchObject.GameDuration,
-            patch: matchObject.GamePatchVersion,
-            datePlayed: matchObject.DatePlayed
+            'riotMatchId': eventInputObject.gameId,
+            'seasonPId': eventInputObject.seasonPId,
+            'tournamentPId': eventInputObject.tournamentPId,
+            'tournamentType': (await dynamoDb.getItem('Tournament', 'TournamentPId', eventInputObject.tournamentPId))['TournamentType'],
+            'blueTeamPId': blueTeamId,
+            'redTeamPId': redTeamId,
+            'duration': matchObject.GameDuration,
+            'patch': matchObject.GamePatchVersion,
+            'datePlayed': matchObject.DatePlayed
         };
-        await insertMySQLQuery(insertMatchStatsColumn, 'MatchStats');
+        await mySql.insertQuery(insertMatchStatsColumn, 'MatchStats');
         // 2) TeamStats + PlayerStats + BannedChamps
         // 2.1) TeamStats
         for (var i = 0; i < Object.keys(matchObject['Teams']).length; ++i) {
             var teamSide = Object.keys(matchObject['Teams'])[i];
             var teamObject = matchObject['Teams'][teamSide];
             var durationByMinute = matchObject.GameDuration / 60;
-            var thisTeamPId = (teamSide == BLUE_ID) ? blueTeamId : redTeamId;
-            var enemyTeamPId = (teamSide == BLUE_ID) ? redTeamId : blueTeamId;
+            var thisTeamPId = (teamSide == GLOBAL.BLUE_ID) ? blueTeamId : redTeamId;
+            var enemyTeamPId = (teamSide == GLOBAL.BLUE_ID) ? redTeamId : blueTeamId;
             var insertTeamStatsColumn = {
-                riotMatchId: eventInputObject.gameId,
-                teamPId: thisTeamPId,
-                side: SIDE_STRING[teamSide],
-                win: teamObject.Win,
-                dmgDealtPerMin: (teamObject.TeamDamageDealt / durationByMinute).toFixed(2),
-                goldPerMin: (teamObject.TeamGold / durationByMinute).toFixed(2),
-                csPerMin: (teamObject.TeamCreepScore / durationByMinute).toFixed(2),
-                vsPerMin: (teamObject.TeamVisionScore / durationByMinute).toFixed(2),
-                firstBlood: teamObject.FirstBlood,
-                firstTower: teamObject.FirstTower,
-                totalKills: teamObject.TeamKills,
-                totalDeaths: teamObject.TeamDeaths,
-                totalAssists: teamObject.TeamAssists,
-                totalTowers: teamObject.Towers,
-                totalDragons: teamObject.Dragons.length,
-                totalHeralds: teamObject.Heralds,
-                totalBarons: teamObject.Barons,
-                totalDamageDealt: teamObject.TeamDamageDealt,
-                totalGold: teamObject.TeamGold,
-                totalCreepScore: teamObject.TeamCreepScore,
-                totalVisionScore: teamObject.TeamVisionScore,
-                totalWardsPlaced: teamObject.TeamWardsPlaced,
-                totalControlWardsBought: teamObject.TeamControlWardsBought,
-                totalWardsCleared: teamObject.TeamWardsCleared
+                'riotMatchId': eventInputObject.gameId,
+                'teamPId': thisTeamPId,
+                'side': GLOBAL.SIDE_STRING[teamSide],
+                'win': teamObject.Win,
+                'dmgDealtPerMin': (teamObject.TeamDamageDealt / durationByMinute).toFixed(2),
+                'goldPerMin': (teamObject.TeamGold / durationByMinute).toFixed(2),
+                'csPerMin': (teamObject.TeamCreepScore / durationByMinute).toFixed(2),
+                'vsPerMin': (teamObject.TeamVisionScore / durationByMinute).toFixed(2),
+                'firstBlood': teamObject.FirstBlood,
+                'firstTower': teamObject.FirstTower,
+                'totalKills': teamObject.TeamKills,
+                'totalDeaths': teamObject.TeamDeaths,
+                'totalAssists': teamObject.TeamAssists,
+                'totalTowers': teamObject.Towers,
+                'totalDragons': teamObject.Dragons.length,
+                'totalHeralds': teamObject.Heralds,
+                'totalBarons': teamObject.Barons,
+                'totalDamageDealt': teamObject.TeamDamageDealt,
+                'totalGold': teamObject.TeamGold,
+                'totalCreepScore': teamObject.TeamCreepScore,
+                'totalVisionScore': teamObject.TeamVisionScore,
+                'totalWardsPlaced': teamObject.TeamWardsPlaced,
+                'totalControlWardsBought': teamObject.TeamControlWardsBought,
+                'totalWardsCleared': teamObject.TeamWardsCleared
             };
-            if (matchObject.GameDuration >= MINUTE_AT_EARLY * 60) {
+            if (matchObject.GameDuration >= GLOBAL.MINUTE_AT_EARLY * 60) {
                 insertTeamStatsColumn['goldAtEarly'] = teamObject.GoldAtEarly;
                 insertTeamStatsColumn['goldDiffEarly'] = teamObject.GoldDiffEarly;
                 insertTeamStatsColumn['csAtEarly'] = teamObject.CsAtEarly;
@@ -708,7 +682,7 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                 insertTeamStatsColumn['killsAtEarly'] = teamObject.KillsAtEarly;
                 insertTeamStatsColumn['killsDiffEarly'] = teamObject.KillsDiffEarly;
             }
-            if (matchObject.GameDuration >= MINUTE_AT_MID * 60) {
+            if (matchObject.GameDuration >= GLOBAL.MINUTE_AT_MID * 60) {
                 insertTeamStatsColumn['goldAtMid'] = teamObject.GoldAtMid;
                 insertTeamStatsColumn['goldDiffMid'] = teamObject.GoldDiffMid;
                 insertTeamStatsColumn['csAtMid'] = teamObject.CsAtMid;
@@ -718,60 +692,60 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                 insertTeamStatsColumn['killsAtMid'] = teamObject.KillsAtMid;
                 insertTeamStatsColumn['killsDiffMid'] = teamObject.KillsDiffMid;
             }
-            insertMySQLQuery(insertTeamStatsColumn, 'TeamStats');
+            mySql.insertQuery(insertTeamStatsColumn, 'TeamStats');
             // 2.2) BannedChamps
             var insertBannedChampsColumn = {
-                riotMatchId: eventInputObject.gameId,
-                teamBannedById: thisTeamPId,
-                teamBannedAgainstId: enemyTeamPId
+                'riotMatchId': eventInputObject.gameId,
+                'teamBannedById': thisTeamPId,
+                'teamBannedAgainstId': enemyTeamPId
             };
             for (var j = 0; j < teamObject.Phase1Bans.length; ++j) {
                 var champId = teamObject.Phase1Bans[j];
                 insertBannedChampsColumn['champId'] = champId;
                 insertBannedChampsColumn['phase'] = 1;
-                insertMySQLQuery(insertBannedChampsColumn, 'BannedChamps');
+                mySql.insertQuery(insertBannedChampsColumn, 'BannedChamps');
             }
             for (var j = 0; j < teamObject.Phase2Bans.length; ++j) {
                 var champId = teamObject.Phase2Bans[j];
                 insertBannedChampsColumn['champId'] = champId;
                 insertBannedChampsColumn['phase'] = 2;
-                insertMySQLQuery(insertBannedChampsColumn, 'BannedChamps');
+                mySql.insertQuery(insertBannedChampsColumn, 'BannedChamps');
             }
             // 2.3) PlayerStats
             for (var j = 0; j < Object.values(teamObject['Players']).length; ++j) {
                 var playerObject = Object.values(teamObject['Players'])[j];
                 var insertPlayerStatsColumn = {
-                    profilePId: getPIdString(profileHashIds, playerObject.ProfileHId),
-                    riotMatchId: eventInputObject.gameId,
-                    teamPId: getPIdString(teamHashIds, teamObject.TeamHId),
-                    side: SIDE_STRING[teamSide],
-                    role: playerObject.Role,
-                    champId: playerObject.ChampId,
-                    win: teamObject.Win,
-                    kills: playerObject.Kills,
-                    deaths: playerObject.Deaths,
-                    assists: playerObject.Assists,
-                    dmgDealtPerMin: (playerObject.TotalDamageDealt / durationByMinute).toFixed(2),
-                    csPerMin: (playerObject.CreepScore / durationByMinute).toFixed(2),
-                    goldPerMin: (playerObject.Gold / durationByMinute).toFixed(2),
-                    vsPerMin: (playerObject.VisionScore / durationByMinute).toFixed(2),
-                    firstBloodKill: playerObject.FirstBloodKill,
-                    firstBloodAssist: playerObject.FirstBloodAssist,
-                    firstTower: playerObject.FirstTower,
-                    damageDealt: playerObject.TotalDamageDealt,
-                    gold: playerObject.Gold,
-                    creepScore: playerObject.CreepScore,
-                    visionScore: playerObject.VisionScore,
-                    wardsPlaced: playerObject.WardsPlaced,
-                    ControlWardsBought: playerObject.ControlWardsBought,
-                    wardsCleared: playerObject.WardsCleared,
-                    soloKills: playerObject.SoloKills,
-                    doubleKills: playerObject.DoubleKills,
-                    tripleKills: playerObject.TripleKills,
-                    quadraKills: playerObject.QuadraKills,
-                    pentaKills: playerObject.PentaKills
+                    'profilePId': getPIdString(profileHashIds, playerObject.ProfileHId),
+                    'riotMatchId': eventInputObject.gameId,
+                    'teamPId': getPIdString(teamHashIds, teamObject.TeamHId),
+                    'side': GLOBAL.SIDE_STRING[teamSide],
+                    'role': playerObject.Role,
+                    'champId': playerObject.ChampId,
+                    'win': teamObject.Win,
+                    'kills': playerObject.Kills,
+                    'deaths': playerObject.Deaths,
+                    'assists': playerObject.Assists,
+                    'dmgDealtPerMin': (playerObject.TotalDamageDealt / durationByMinute).toFixed(2),
+                    'csPerMin': (playerObject.CreepScore / durationByMinute).toFixed(2),
+                    'goldPerMin': (playerObject.Gold / durationByMinute).toFixed(2),
+                    'vsPerMin': (playerObject.VisionScore / durationByMinute).toFixed(2),
+                    'firstBloodKill': playerObject.FirstBloodKill,
+                    'firstBloodAssist': playerObject.FirstBloodAssist,
+                    'firstTower': playerObject.FirstTower,
+                    'damageDealt': playerObject.TotalDamageDealt,
+                    'gold': playerObject.Gold,
+                    'creepScore': playerObject.CreepScore,
+                    'visionScore': playerObject.VisionScore,
+                    'wardsPlaced': playerObject.WardsPlaced,
+                    'controlWardsBought': playerObject.ControlWardsBought,
+                    'wardsCleared': playerObject.WardsCleared,
+                    'soloKills': playerObject.SoloKills,
+                    'doubleKills': playerObject.DoubleKills,
+                    'tripleKills': playerObject.TripleKills,
+                    'quadraKills': playerObject.QuadraKills,
+                    'pentaKills': playerObject.PentaKills
                 };
-                if (matchObject.GameDuration >= MINUTE_AT_EARLY * 60) {
+                if (matchObject.GameDuration >= GLOBAL.MINUTE_AT_EARLY * 60) {
                     insertPlayerStatsColumn['goldAtEarly'] = playerObject.GoldAtEarly;
                     insertPlayerStatsColumn['goldDiffEarly'] = playerObject.GoldDiffEarly;
                     insertPlayerStatsColumn['csAtEarly'] = playerObject.CsAtEarly;
@@ -781,7 +755,7 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                     insertPlayerStatsColumn['jungleCsAtEarly'] = playerObject.JungleCsAtEarly;
                     insertPlayerStatsColumn['jungleCsDiffEarly'] = playerObject.JungleCsDiffEarly;
                 }
-                if (matchObject.GameDuration >= MINUTE_AT_MID * 60) {
+                if (matchObject.GameDuration >= GLOBAL.MINUTE_AT_MID * 60) {
                     insertPlayerStatsColumn['goldAtMid'] = playerObject.GoldAtMid;
                     insertPlayerStatsColumn['goldDiffMid'] = playerObject.GoldDiffMid;
                     insertPlayerStatsColumn['csAtMid'] = playerObject.CsAtMid;
@@ -791,7 +765,7 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                     insertPlayerStatsColumn['jungleCsAtMid'] = playerObject.JungleCsAtMid;
                     insertPlayerStatsColumn['jungleCsDiffMid'] = playerObject.JungleCsDiffMid;
                 }
-                insertMySQLQuery(insertPlayerStatsColumn, 'PlayerStats');
+                mySql.insertQuery(insertPlayerStatsColumn, 'PlayerStats');
             }
         }
         // 3.3) Objectives
@@ -800,10 +774,10 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                 minuteObject['Events'].forEach(function(eventObject) {
                     if (['Tower','Inhibitor','Dragon','Baron','Herald'].includes(eventObject.EventType)) {
                         var insertObjectivesColumn = {
-                            riotMatchId: eventInputObject.gameId,
-                            teamPId: (eventObject.TeamId == BLUE_ID) ? blueTeamId : redTeamId,
-                            objectiveEvent: eventObject.EventType,
-                            timestamp: eventObject.Timestamp
+                            'riotMatchId': eventInputObject.gameId,
+                            'teamPId': (eventObject.TeamId == GLOBAL.BLUE_ID) ? blueTeamId : redTeamId,
+                            'objectiveEvent': eventObject.EventType,
+                            'timestamp': eventObject.Timestamp
                         };
                         if ('EventCategory' in eventObject) {
                             insertObjectivesColumn['objectiveCategory'] = eventObject.EventCategory;
@@ -814,7 +788,7 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                         if ('BaronPowerPlay' in eventObject) {
                             insertObjectivesColumn['baronPowerPlay'] = eventObject.BaronPowerPlay;
                         }
-                        insertMySQLQuery(insertObjectivesColumn, 'Objectives');
+                        mySql.insertQuery(insertObjectivesColumn, 'Objectives');
                     }
                 });
             }
@@ -868,7 +842,7 @@ function getPIdString(hashIdType, HId) {
 }
 
 function updateBaronDuration(thisPatch) {
-    return (isPatch1LaterThanPatch2(thisPatch, BARON_DURATION_PATCH_CHANGE)) ? CURRENT_BARON_DURATION : OLD_BARON_DURATION;
+    return (isPatch1LaterThanPatch2(thisPatch, GLOBAL.BARON_DURATION_PATCH_CHANGE)) ? GLOBAL.CURRENT_BARON_DURATION : GLOBAL.OLD_BARON_DURATION;
 }
 
 // Assumption: patch1 and patch2 are formatted in "##.##"
@@ -892,8 +866,8 @@ function teamGoldAtTimeStamp(timestamp, timelineList, teamId) {
     if ((timeStampMinute + 1) >= timelineList.length) { return null; }
 
     // Take team gold at marked minute, and from minute + 1. Average them.
-    var teamGoldAtMinute = (teamId == BLUE_ID) ? timelineList[timeStampMinute]['BlueTeamGold'] : timelineList[timeStampMinute]['RedTeamGold'];
-    var teamGoldAtMinutePlus1 = (teamId == BLUE_ID) ? timelineList[timeStampMinute+1]['BlueTeamGold'] : timelineList[timeStampMinute+1]['RedTeamGold'];
+    var teamGoldAtMinute = (teamId == GLOBAL.BLUE_ID) ? timelineList[timeStampMinute]['BlueTeamGold'] : timelineList[timeStampMinute]['RedTeamGold'];
+    var teamGoldAtMinutePlus1 = (teamId == GLOBAL.BLUE_ID) ? timelineList[timeStampMinute+1]['BlueTeamGold'] : timelineList[timeStampMinute+1]['RedTeamGold'];
     var goldPerSecond = (teamGoldAtMinutePlus1 - teamGoldAtMinute) / 60;
     return (teamGoldAtMinute + Math.floor((goldPerSecond * timeStampSeconds)));
 }
@@ -908,7 +882,7 @@ function computeBaronPowerPlay(baronObjectiveMinuteIndex, timelineList, patch) {
                 var eventIndex = baronObjectiveMinuteIndex[minute];
                 var baronEventObject = timelineList[minute]['Events'][eventIndex]; // Make shallow copy and change that
                 var thisTeamId = baronEventObject.TeamId;
-                var oppTeamId = (thisTeamId == BLUE_ID) ? RED_ID : BLUE_ID;
+                var oppTeamId = (thisTeamId == GLOBAL.BLUE_ID) ? GLOBAL.RED_ID : GLOBAL.BLUE_ID;
                 var timeStampAtKill = baronEventObject.Timestamp / 1000; // Convert ms -> seconds
                 var teamGoldAtKill = teamGoldAtTimeStamp(timeStampAtKill, timelineList, thisTeamId);
                 var oppGoldAtKill = teamGoldAtTimeStamp(timeStampAtKill, timelineList, oppTeamId);
@@ -926,124 +900,4 @@ function computeBaronPowerPlay(baronObjectiveMinuteIndex, timelineList, patch) {
             reject(err);
         }
     });
-}
-
-// Returns a promise
-function putItemInDynamoDB(tableName, items, key) {
-    if (PUT_INTO_DYNAMO) {
-        var params = {
-            TableName: tableName,
-            Item: items
-        };
-        return new Promise(function(resolve, reject) {
-            dynamoDB.put(params, function(err, data) {
-                if (err) {
-                    console.error("ERROR - putItemInDynamoDB \'" + tableName + "\' Promise rejected.");
-                    reject(err);
-                }
-                else {
-                    console.log("Dynamo DB: Put Item \'" + key + "\' into \"" + tableName + "\" Table!");
-                    resolve(data);
-                }
-            });
-        });
-    }
-    else {
-        // debugging
-        if (DEBUG_DYNAMO) { console.log("DynamoDB Table", "\'" + tableName + "\'"); console.log(JSON.stringify(items)); }
-    }
-}
-
-// Returns a Promise
-function getItemInDynamoDB(tableName, partitionName, key) {
-    var params = {
-        TableName: tableName,
-        Key: {
-            [partitionName]: key
-        }
-    };
-    return new Promise(function(resolve, reject) {
-        try {
-            dynamoDB.get(params, function(err, data) {
-                if (err) {
-                    reject(err);
-                }
-                else {
-                    console.log("Dynamo DB: Get Item \'" + key + "\' from Table \"" + tableName + "\"");
-                    resolve(data['Item']);
-                }
-            });
-        }
-        catch (error) {
-            console.error("ERROR - getItemInDynamoDB \'" + tableName + "\' Promise rejected.")
-            reject(error);
-        }
-    });
-}
-
-// Returns a Promise
-function doesItemExistInDynamoDB(tableName, partitionName, key) {
-    var params = {
-        TableName: tableName,
-        Key: {
-            [partitionName]: key
-        },
-        AttributesToGet: [partitionName],
-    };
-    return new Promise(function(resolve, reject) {
-        try {
-            dynamoDB.get(params, function(err, data) {
-                if (err) {
-                    reject(err);
-                }
-                else {
-                    resolve('Item' in data);
-                }
-            });
-        }
-        catch (error) {
-            console.error("ERROR - doesItemExistInDynamoDB \'" + tableName + "\' Promise rejected.");
-            reject(error);
-        }
-    });
-}
-
-// Returns a Promise
-function insertMySQLQuery(queryObject, tableName) {
-    if (INSERT_INTO_MYSQL) {
-        return new Promise(function(resolve, reject) {
-            try {
-                var queryStr = 'INSERT INTO ' + tableName + ' (';
-                Object.keys(queryObject).forEach(function(columnName) {
-                    queryStr += (columnName + ',');
-                });
-                queryStr = queryStr.slice(0, -1); // trimEnd of character
-                queryStr += ') VALUES (';
-                Object.values(queryObject).forEach(function(value) {
-                    value = (typeof value === "string") ? '\'' + value + '\'' : value;
-                    queryStr += (value + ',');
-                });
-                queryStr = queryStr.slice(0, -1); // trimEnd of character
-                queryStr += ');';
-
-                sqlPool.getConnection(function(err, connection) {
-                    if (err) { reject(err); }
-                    connection.query(queryStr, function(error, results, fields) {
-                        connection.release();
-                        if (error) { throw error; }
-                        if (DEBUG_MYSQL) { console.log("MySQL: Insert Row into Table \"" + tableName + "\" - Affected " + results.affectedRows + " row(s)."); }
-                        resolve(results); 
-                    });
-                });
-            }
-            catch (error) {
-                console.error("ERROR - insertMySQLQuery \'" + tableName + "\' Promise rejected.");
-                reject(error);
-            }
-        });
-    }
-    else {
-        // debugging
-        if (DEBUG_MYSQL) { console.log("MySQL Table", "\'" + tableName + "\'"); console.log(queryObject); }
-    }
 }

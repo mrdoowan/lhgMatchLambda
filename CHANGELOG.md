@@ -1,3 +1,6 @@
+# 0.7.0
+* Added module dependencies for dynamoDB and mySql helper functions
+
 # 0.6.0
 * overall.js finished Team & Profile Tables for DynamoDB
 
