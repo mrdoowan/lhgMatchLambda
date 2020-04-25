@@ -14,7 +14,7 @@ AWS.config.update({ region: 'us-east-2' });
 var dynamoDB = new AWS.DynamoDB.DocumentClient({ apiVersion: '2012-08-10' });
 
 /*  Put 'false' to test without affecting the databases. */
-const PUT_INTO_DYNAMO = true;       // 'true' when comfortable to push into DynamoDB
+const PUT_INTO_DYNAMO = false;       // 'true' when comfortable to push into DynamoDB
 /*  Put 'false' to not debug. */
 const DEBUG_DYNAMO = false;
 
@@ -138,10 +138,9 @@ function scanTableLoopInDynamoDB(tableName) {
             let data;
             do{
                 data = await dynamoDB.scan(params).promise();
-                console.log("Dynamo DB: Scan operation on Table '" + tableName + "'");
                 data.Items.forEach((item) => scanResults.push(item));
                 params.ExclusiveStartKey  = data.LastEvaluatedKey;
-                console.log("LastEvaluatedKey: '" + data.LastEvaluatedKey + "'");
+                console.log("Dynamo DB: Scan operation on Table '" + tableName + "' LastEvaluatedKey: '" + data.LastEvaluatedKey + "'");
             }while(typeof data.LastEvaluatedKey != "undefined");
             resolve(scanResults);
         }

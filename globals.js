@@ -13,5 +13,5 @@ module.exports = {
     BARON_DURATION_PATCH_CHANGE: '9.23',
     // Baron duration is 3 minutes after this patch, 3.5 minutes before it
     OLD_BARON_DURATION: 210, // in seconds
-    CURRENT_BARON_DURATION: 180 // in seconds
+    CURRENT_BARON_DURATION: 180, // in seconds
 }
