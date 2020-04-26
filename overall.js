@@ -697,6 +697,36 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
             Init DynamoDB Items
             -------------------
         */
+        // Check 'Information' exists in tourneyDbObject
+        // {MAIN}/tournaments/<tournamentShortName>
+        var tourneyInfoInit = {
+            'TournamentShortName': '',
+            'TournamentName': '',
+            'TournamentType': '',
+            'SeasonPId': 0,
+            'SeasonName': '',
+            'SeasonShortName': '',
+            'NumberGames': 0,
+            'BlueSideWins': 0,
+            'TotalDragonsKilled': 0,
+            'CloudDrakes': 0,
+            'OceanDrakes': 0,
+            'InfernalDrakes': 0,
+            'MountainDrakes': 0,
+            'ElderDrakes': 0,
+        };
+        if (!('Information' in tourneyDbObject)) {
+            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+                'SET #key = :val',
+                {
+                    '#key': 'SingleRecords'
+                },
+                {
+                    ':val': tourneyInfoInit
+                }
+            );
+            tourneyDbObject['Information'] = tourneyInfoInit;
+        }
         // Check 'SingleRecords' exists in tourneyDbObject
         // {MAIN}/tournaments/<tournamentShortName>
         if (!('SingleRecords' in tourneyDbObject)) {
@@ -750,6 +780,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
             );
         }
         // Make shallow copies
+        var tourneyInfoItem = tourneyDbObject['Information'];
         var singleRecordsItem = teamDbObject['SingleRecords'];
         var profileHIdList = teamDbObject['ProfileHIdList'];
         var teamHIdList = teamDbObject['TeamHIdList'];
@@ -760,7 +791,6 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
             Compile Data
             -------------
         */
-        var tourneyInfoObject = tourneyDbObject['Information'];
         for (var i = 0; i < matchStatsSqlList.length; ++i) {
             
         }
