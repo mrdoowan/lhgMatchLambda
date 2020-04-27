@@ -116,7 +116,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
             // Check if 'StatsLog' exists in Profile
             // {MAIN}/profile/<profileName>/stats/<seasonShortName>
             var initStatsLog = {
-                [tournamentPId]: {}
+                [tournamentPId]: { 'TournamentName': tourneyInfoObject.TournamentName }
             };
             if (!('StatsLog' in profileDbObject)) {
                 await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
@@ -420,6 +420,7 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
             // Check 'StatsLog' exists in TeamItem
             // {MAIN}/team/<teamName>/stats/<tournamentShortName>
             var initTourneyPId = {
+                'TournamentName': tourneyInfoObject.TournamentName,
                 'GamesPlayed': 0,
                 'GamesPlayedOverEarly': 0,
                 'GamesPlayedOverMid': 0,
@@ -691,7 +692,6 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
 async function updateTournamentItemDynamoDb(tourneyDbObject) {
     try {
         var tournamentPId = tourneyInfoObject['TournamentPId'];
-        var matchStatsSqlList = await mySql.callSProc('matchStatsByTournamentId', tournamentPId);
         /*  
             -------------------
             Init DynamoDB Items
@@ -700,12 +700,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
         // Check 'Information' exists in tourneyDbObject
         // {MAIN}/tournaments/<tournamentShortName>
         var tourneyInfoInit = {
-            'TournamentShortName': '',
-            'TournamentName': '',
-            'TournamentType': '',
             'SeasonPId': 0,
-            'SeasonName': '',
-            'SeasonShortName': '',
             'NumberGames': 0,
             'BlueSideWins': 0,
             'TotalDragonsKilled': 0,
@@ -739,6 +734,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     ':val': {}
                 }
             );
+            tourneyDbObject['SingleRecords'] = {};
         }
         // Check 'ProfileHIdList' in tourneyDbObject
         // {MAIN}/tournament/<tournamentShortName>/players
@@ -752,6 +748,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     ':val': []
                 }
             );
+            tourneyDbObject['ProfileHIdList'] = [];
         }
         // Check 'TeamHIdList' in tourneyDbObject
         // {MAIN}/tournament/<tournamentShortName>/teams
@@ -765,6 +762,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     ':val': []
                 }
             );
+            tourneyDbObject['TeamHIdList'] = [];
         }
         // Check 'PickBans' in tourneyDbObject
         // {MAIN}/tournament/<tournamentShortName>/pickbans
@@ -778,21 +776,92 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     ':val': {}
                 }
             );
+            tourneyDbObject['PickBans'] = {};
+        }
+        // Check 'GameLog' in tourneyDbObject
+        // {MAIN}/tournament/<tournamentShortName>/games
+        if (!('GameLog' in tourneyDbObject)) {
+            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+                'SET #key = :val',
+                {
+                    '#key': 'GameLog'
+                },
+                {
+                    ':val': {}
+                }
+            );
+            tourneyDbObject['GameLog'] = {};
         }
         // Make shallow copies
-        var tourneyInfoItem = tourneyDbObject['Information'];
+        var tourneyInfoItem = tourneyDbObject['Information'];           // Add onto
+        if (!('NumberGames' in tourneyInfoItem)) { tourneyInfoItem['NumberGames'] = 0; }
+        if (!('TotalGameDuration' in tourneyInfoItem)) { tourneyInfoItem['TotalGameDuration'] = 0; }
+        if (!('BlueSideWins' in tourneyInfoItem)) { tourneyInfoItem['BlueSideWins'] = 0; }
+        if (!('CloudDrakes' in tourneyInfoItem)) { tourneyInfoItem['CloudDrakes'] = 0; }
+        if (!('OceanDrakes' in tourneyInfoItem)) { tourneyInfoItem['OceanDrakes'] = 0; }
+        if (!('InfernalDrakes' in tourneyInfoItem)) { tourneyInfoItem['InfernalDrakes'] = 0; }
+        if (!('MountainDrakes' in tourneyInfoItem)) { tourneyInfoItem['MountainDrakes'] = 0; }
+        if (!('ElderDrakes' in tourneyInfoItem)) { tourneyInfoItem['ElderDrakes'] = 0; }
+        var pickBansItem = teamDbObject['PickBans'];                    // Add onto
+        var profileHIdSet = new Set(teamDbObject['ProfileHIdList']);    // Add onto
+        var teamHIdSet = new Set(teamDbObject['TeamHIdList']);          // Add onto
+        var gameLogTourneyItem = tourneyDbObject['GameLog'];            // Add onto
         var singleRecordsItem = teamDbObject['SingleRecords'];
-        var profileHIdList = teamDbObject['ProfileHIdList'];
-        var teamHIdList = teamDbObject['TeamHIdList'];
-        var pickBansItem = teamDbObject['PickBans'];
 
         /*  
             -------------
             Compile Data
             -------------
         */
+        var matchStatsSqlList = await mySql.callSProc('matchStatsByTournamentId', tournamentPId);
         for (var i = 0; i < matchStatsSqlList.length; ++i) {
-            
+            var sqlMatchStats = matchStatsSqlList[i];
+            var matchPId = sqlMatchStats.riotMatchId;
+            var matchLoaded = false;
+            if (!(matchPId in gameLogTourneyItem)) {
+                /*  
+                    --------------
+                    'Information'
+                    --------------
+                */
+                tourneyInfoItem['NumberGames']++;
+                tourneyInfoItem['BlueSideWins'] += sqlMatchStats.blueWin;
+                tourneyInfoItem['CloudDrakes'] += sqlMatchStats.cloudDragons;
+                tourneyInfoItem['OceanDrakes'] += sqlMatchStats.oceanDragons;
+                tourneyInfoItem['InfernalDrakes'] += sqlMatchStats.infernalDragons;
+                tourneyInfoItem['MountainDrakes'] += sqlMatchStats.mountainDragons;
+                tourneyInfoItem['ElderDrakes'] += sqlMatchStats.elderDragons;
+                /*
+                    --------------
+                    'PickBans'
+                    --------------
+                */
+                var matchObject = await dynamoDb.getItem('Matches', 'MatchPId', matchPId);
+                for (var j = 0; j < Object.keys(matchObject['Teams']).length; ++j) {
+                    
+                }
+                /*
+                    --------------
+                    'ProfileHIdList' / 'TeamHIdList'
+                    --------------
+                */
+
+                /*
+                    --------------
+                    'GameLog'
+                    --------------
+                */
+
+                matchLoaded = true;
+            }
+            /*  
+                -----------------
+                'SingleRecords'
+                -----------------
+            */
+            if (matchLoaded) {
+
+            }
         }
     }
     catch (error) {
