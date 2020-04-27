@@ -51,15 +51,125 @@ async function main() {
 
 main();
 
-/*  
+/*
+    ----------------------
+    Const Inits
+    ----------------------
+*/
+//#region Consts
+const initProfileSeasonGames = {
+    'Matches': {}
+}
+const initProfileTourneyStats = {
+    'GamesPlayed': 0,
+    'GamesPlayedOverEarly': 0,
+    'GamesPlayedOverMid': 0,
+    'TotalGameDuration': 0,
+    'GamesWin': 0,
+    'TotalKills': 0,
+    'TotalDeaths': 0,
+    'TotalAssists': 0,
+    'TotalCreepScore': 0,
+    'TotalDamage': 0,
+    'TotalGold': 0,
+    'TotalVisionScore': 0,
+    'TotalCsAtEarly': 0,
+    'TotalGoldAtEarly': 0,
+    'TotalXpAtEarly': 0,
+    'TotalCsDiffEarly': 0,
+    'TotalGoldDiffEarly': 0,
+    'TotalXpDiffEarly': 0,
+    'TotalFirstBloods': 0,
+    'TotalTeamKills': 0,
+    'TotalTeamDeaths': 0,
+    'TotalTeamDamage': 0,
+    'TotalTeamGold': 0,
+    'TotalTeamVisionScore': 0,
+    'TotalWardsPlaced': 0,
+    'TotalControlWardsBought': 0,
+    'TotalWardsCleared': 0,
+    'TotalSoloKills': 0,
+    'TotalDoubleKills': 0,
+    'TotalTripleKills': 0,
+    'TotalQuadraKills': 0,
+    'TotalPentaKills': 0,
+};
+const initTeamSeasonGames = {
+    'Matches': {}
+};
+const initTeamSeasonScouting = {
+    'Ongoing': false,
+    'MultiOpgg': '',
+    'GamesPlayed': 0,
+    'GamesWin': 0,
+    'BannedByTeam': {},
+    'BannedAgainstTeam': {},
+    'PlayerLog': {}
+};
+const initTeamTourneyStats = {
+    'GamesPlayed': 0,
+    'GamesPlayedOverEarly': 0,
+    'GamesPlayedOverMid': 0,
+    'GamesWon': 0,
+    'GamesPlayedOnBlue': 0,
+    'BlueWins': 0,
+    'TotalGameDuration': 0,
+    'TotalXpDiffEarly': 0,
+    'TotalXpDiffMid': 0,
+    'TotalGold': 0,
+    'TotalGoldDiffEarly': 0,
+    'TotalGoldDiffMid': 0,
+    'TotalCreepScore': 0,
+    'TotalCsDiffEarly': 0,
+    'TotalCsDiffMid': 0,
+    'TotalFirstBloods': 0,
+    'TotalFirstTowers': 0,
+    'TotalKills': 0,
+    'TotalDeaths': 0,
+    'TotalAssists': 0,
+    'TotalTowersTaken': 0,
+    'TotalTowersLost': 0,
+    'TotalDragonsTaken': 0,
+    'TotalEnemyDragons': 0,
+    'TotalHeraldsTaken': 0,
+    'TotalEnemyHeralds': 0,
+    'TotalBaronsTaken': 0,
+    'TotalEnemyBarons': 0,
+    'TotalVisionScore': 0,
+    'TotalWardsPlaced': 0,
+    'TotalControlWardsBought': 0,
+    'TotalWardsCleared': 0,
+    'TotalEnemyWardsPlaced': 0
+};
+const initTourneyInformation = {
+    'SeasonPId': 0,
+    'NumberGames': 0,
+    'BlueSideWins': 0,
+    'TotalDragonsKilled': 0,
+    'CloudDrakes': 0,
+    'OceanDrakes': 0,
+    'InfernalDrakes': 0,
+    'MountainDrakes': 0,
+    'ElderDrakes': 0,
+};
+const initTourneyPickBans = {
+    'BluePicks': 0,
+    'RedPicks': 0,
+    'Phase1Bans': 0,
+    'Phase2Bans': 0,
+    'BluePhase1Bans': 0,
+    'RedPhase1Bans': 0,
+    'BluePhase2Bans': 0,
+    'RedPhase2Bans': 0
+};
+//#endregion
+
+/*
     ----------------------
     Database Functions
     ----------------------
 */
 
-/*
-    Get list of players that played in tournamentId and update their GameLogs
-*/
 async function updateProfileItemDynamoDb(tourneyDbObject) {
     try {
         var tourneyInfoObject = tourneyDbObject['Information'];
@@ -77,15 +187,10 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                 Init DynamoDB Items
                 -------------------
             */
+            // #region Init Items
             // Check 'GameLog' exists in ProfileDbObject
             // {MAIN}/profile/<profileName>/games/<seasonShortName>
-            var initSeasonPIdGames = {
-                'SeasonTime': seasonInfoObject.seasonTime,
-                'Matches': {}
-            }
-            var initGameLog = {
-                [seasonPId]: initSeasonPIdGames
-            };
+            const initProfileGameLog = { [seasonPId]: initProfileSeasonGames };
             // Check if 'GameLog' exists in Profile
             if (!('GameLog' in profileDbObject)) {
                 await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
@@ -94,10 +199,10 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                         '#gLog': 'GameLog'
                     },
                     { 
-                        ':val': initGameLog
+                        ':val': initProfileGameLog
                     }
                 );
-                profileDbObject['GameLog'] = initGameLog;
+                profileDbObject['GameLog'] = Object.assign({}, initProfileGameLog);
             }
             // Check if that season exists in the GameLogs
             else if (!(seasonPId in profileDbObject['GameLog'])) {
@@ -108,16 +213,14 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                         '#sId': seasonPId
                     },
                     { 
-                        ':val': initSeasonPIdGames
+                        ':val': initProfileSeasonGames
                     }
                 );
-                profileDbObject['GameLog'][seasonPId] = initSeasonPIdGames;
+                profileDbObject['GameLog'][seasonPId] = Object.assign({}, initProfileSeasonGames);
             }
             // Check if 'StatsLog' exists in Profile
             // {MAIN}/profile/<profileName>/stats/<seasonShortName>
-            var initStatsLog = {
-                [tournamentPId]: { 'TournamentName': tourneyInfoObject.TournamentName }
-            };
+            const initStatsLog = { [tournamentPId]: {} };
             if (!('StatsLog' in profileDbObject)) {
                 await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
                     'SET #sLog = :val',
@@ -128,7 +231,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                         ':val': initStatsLog
                     }
                 );
-                profileDbObject['StatsLog'] = initStatsLog;
+                profileDbObject['StatsLog'] = Object.assign({}, initStatsLog);
             }
             // Check if that TournamentPId in StatsLog
             if (!(tournamentPId in profileDbObject['StatsLog'])) {
@@ -157,6 +260,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                 );
                 profileDbObject['ChampsPlayed'] = {};
             }
+            //#endregion
             // Make shallow copies
             var champsPlayedItem = profileDbObject['ChampsPlayed'];
             var tourneyProfileStatsItem = profileDbObject['StatsLog'][tournamentPId];
@@ -193,40 +297,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                     // Check if the Role they played exists
                     var role = sqlPlayerStats.role;
                     if (!(role in tourneyProfileStatsItem)) {
-                        tourneyProfileStatsItem[role] = {
-                            'GamesPlayed': 0,
-                            'GamesPlayedOverEarly': 0,
-                            'GamesPlayedOverMid': 0,
-                            'TotalGameDuration': 0,
-                            'GamesWin': 0,
-                            'TotalKills': 0,
-                            'TotalDeaths': 0,
-                            'TotalAssists': 0,
-                            'TotalCreepScore': 0,
-                            'TotalDamage': 0,
-                            'TotalGold': 0,
-                            'TotalVisionScore': 0,
-                            'TotalCsAtEarly': 0,
-                            'TotalGoldAtEarly': 0,
-                            'TotalXpAtEarly': 0,
-                            'TotalCsDiffEarly': 0,
-                            'TotalGoldDiffEarly': 0,
-                            'TotalXpDiffEarly': 0,
-                            'TotalFirstBloods': 0,
-                            'TotalTeamKills': 0,
-                            'TotalTeamDeaths': 0,
-                            'TotalTeamDamage': 0,
-                            'TotalTeamGold': 0,
-                            'TotalTeamVisionScore': 0,
-                            'TotalWardsPlaced': 0,
-                            'TotalControlWardsBought': 0,
-                            'TotalWardsCleared': 0,
-                            'TotalSoloKills': 0,
-                            'TotalDoubleKills': 0,
-                            'TotalTripleKills': 0,
-                            'TotalQuadraKills': 0,
-                            'TotalPentaKills': 0,
-                        };
+                        tourneyProfileStatsItem[role] = Object.assign({}, initProfileTourneyStats);
                     }
                     tourneyProfileStatsItem[role]['GamesPlayed']++;
                     tourneyProfileStatsItem[role]['GamesPlayedOverEarly'] += (sqlPlayerStats.duration >= GLOBAL.MINUTE_AT_EARLY * 60);
@@ -345,15 +416,10 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                 Init DynamoDB Items
                 -------------------
             */
+            // #region Init Items
             // Check 'GameLog' exists in TeamItem
             // {MAIN}/team/<teamName>/games/<seasonShortName>
-            var initSeasonPIdGames = {
-                'SeasonTime': seasonInfoObject.seasonTime,
-                'Matches': {}
-            }
-            var initGameLog = {
-                [seasonPId]: initSeasonPIdGames
-            };
+            const initTeamGameLog = { [seasonPId]: initTeamSeasonGames };
             if (!('GameLog' in teamDbObject)) {
                 await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
                     'SET #gLog = :val',
@@ -361,10 +427,10 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         '#gLog': 'GameLog'
                     }, 
                     {
-                        ':val': initGameLog
+                        ':val': initTeamGameLog
                     }
                 );
-                teamDbObject['GameLog'] = initGameLog;
+                teamDbObject['GameLog'] = Object.assign({}, initTeamGameLog);
             }
             else if (!(seasonPId in teamDbObject['GameLog'])) {
                 await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
@@ -374,24 +440,14 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         '#sId': seasonPId
                     },
                     {
-                        ':val': initSeasonPIdGames
+                        ':val': initTeamSeasonGames
                     }
                 )
-                teamDbObject['GameLog'][seasonPId] = initSeasonPIdGames;
+                teamDbObject['GameLog'][seasonPId] = Object.assign({}, initTeamSeasonGames);
             }
             // Check 'Scouting' exists in TeamItem 
             // {MAIN}/team/<teamName>/scouting/<seasonShortName>
-            var initScoutingSeason = { 
-                'SeasonTime': seasonInfoObject.SeasonTime,
-                'Ongoing': false,
-                'MultiOpgg': '',
-                'GamesPlayed': 0,
-                'GamesWin': 0,
-                'BannedByTeam': {},
-                'BannedAgainstTeam': {},
-                'PlayerLog': {}
-            }
-            var initScouting = { [seasonPId]: initScoutingSeason };
+            const initTeamScouting = { [seasonPId]: initTeamSeasonScouting };
             if (!('Scouting' in teamDbObject)) {
                 await dynamoDb.updateItem('Team', 'TeamPId', teamPId, 
                     'SET #sct = :val',
@@ -399,10 +455,10 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         '#sct': 'Scouting'
                     },
                     {
-                        ':val': initScouting
+                        ':val': initTeamScouting
                     }
                 )
-                teamDbObject['Scouting'] = initScouting;
+                teamDbObject['Scouting'] = Object.assign({}, initTeamScouting);
             }
             else if (!(seasonPId in teamDbObject['Scouting'])) {
                 await dynamoDb.updateItem('Team', 'TeamPId', teamPId, 
@@ -412,52 +468,14 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         '#sId': seasonPId
                     },
                     {
-                        ':val': initScoutingSeason
+                        ':val': initTeamSeasonScouting
                     }
                 );
-                teamDbObject['Scouting'][seasonPId] = initScoutingSeason;
+                teamDbObject['Scouting'][seasonPId] = Object.assign({}, initTeamSeasonScouting);
             }
             // Check 'StatsLog' exists in TeamItem
             // {MAIN}/team/<teamName>/stats/<tournamentShortName>
-            var initTourneyPId = {
-                'TournamentName': tourneyInfoObject.TournamentName,
-                'GamesPlayed': 0,
-                'GamesPlayedOverEarly': 0,
-                'GamesPlayedOverMid': 0,
-                'GamesWon': 0,
-                'GamesPlayedOnBlue': 0,
-                'BlueWins': 0,
-                'TotalGameDuration': 0,
-                'TotalXpDiffEarly': 0,
-                'TotalXpDiffMid': 0,
-                'TotalGold': 0,
-                'TotalGoldDiffEarly': 0,
-                'TotalGoldDiffMid': 0,
-                'TotalCreepScore': 0,
-                'TotalCsDiffEarly': 0,
-                'TotalCsDiffMid': 0,
-                'TotalFirstBloods': 0,
-                'TotalFirstTowers': 0,
-                'TotalKills': 0,
-                'TotalDeaths': 0,
-                'TotalAssists': 0,
-                'TotalTowersTaken': 0,
-                'TotalTowersLost': 0,
-                'TotalDragonsTaken': 0,
-                'TotalEnemyDragons': 0,
-                'TotalHeraldsTaken': 0,
-                'TotalEnemyHeralds': 0,
-                'TotalBaronsTaken': 0,
-                'TotalEnemyBarons': 0,
-                'TotalVisionScore': 0,
-                'TotalWardsPlaced': 0,
-                'TotalControlWardsBought': 0,
-                'TotalWardsCleared': 0,
-                'TotalEnemyWardsPlaced': 0
-            };
-            var initStatsLog = {
-                [tournamentPId]: initTourneyPId
-            };
+            const initTeamStatsLog = { [tournamentPId]: initTeamTourneyStats };
             if (!('StatsLog' in teamDbObject)) {
                 await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
                     'SET #sLog = :val',
@@ -465,10 +483,10 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         '#sLog': 'StatsLog'
                     },
                     { 
-                        ':val': initStatsLog
+                        ':val': initTeamStatsLog
                     }
                 );
-                teamDbObject['StatsLog'] = initStatsLog;
+                teamDbObject['StatsLog'] = Object.assign({}, initTeamStatsLog);
             }
             // Check if that tournamentId in StatsLog
             if (!(tournamentPId in teamDbObject['StatsLog'])) {
@@ -479,11 +497,12 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         '#tId': tournamentPId
                     },
                     { 
-                        ':val': initTourneyPId 
+                        ':val': initTeamTourneyStats 
                     }
                 );
-                teamDbObject['StatsLog'][tournamentPId] = initTourneyPId;
+                teamDbObject['StatsLog'][tournamentPId] = Object.assign({}, initTeamTourneyStats);
             }
+            //#endregion
             // Make shallow copies
             var tourneyTeamStatsItem = teamDbObject['StatsLog'][tournamentPId];
             var scoutingItem = teamDbObject['Scouting'][seasonPId];
@@ -697,19 +716,9 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
             Init DynamoDB Items
             -------------------
         */
+        // #region Init Items
         // Check 'Information' exists in tourneyDbObject
         // {MAIN}/tournaments/<tournamentShortName>
-        var tourneyInfoInit = {
-            'SeasonPId': 0,
-            'NumberGames': 0,
-            'BlueSideWins': 0,
-            'TotalDragonsKilled': 0,
-            'CloudDrakes': 0,
-            'OceanDrakes': 0,
-            'InfernalDrakes': 0,
-            'MountainDrakes': 0,
-            'ElderDrakes': 0,
-        };
         if (!('Information' in tourneyDbObject)) {
             await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
                 'SET #key = :val',
@@ -717,10 +726,10 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     '#key': 'SingleRecords'
                 },
                 {
-                    ':val': tourneyInfoInit
+                    ':val': initTourneyInformation
                 }
             );
-            tourneyDbObject['Information'] = tourneyInfoInit;
+            tourneyDbObject['Information'] = Object.assign({}, initTourneyInformation);
         }
         // Check 'SingleRecords' exists in tourneyDbObject
         // {MAIN}/tournaments/<tournamentShortName>
@@ -792,6 +801,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
             );
             tourneyDbObject['GameLog'] = {};
         }
+        //#endregion
         // Make shallow copies
         var tourneyInfoItem = tourneyDbObject['Information'];           // Add onto
         if (!('NumberGames' in tourneyInfoItem)) { tourneyInfoItem['NumberGames'] = 0; }
@@ -807,7 +817,6 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
         var teamHIdSet = new Set(teamDbObject['TeamHIdList']);          // Add onto
         var gameLogTourneyItem = tourneyDbObject['GameLog'];            // Add onto
         var singleRecordsItem = teamDbObject['SingleRecords'];
-
         /*  
             -------------
             Compile Data
@@ -838,14 +847,22 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                 */
                 var matchObject = await dynamoDb.getItem('Matches', 'MatchPId', matchPId);
                 for (var j = 0; j < Object.keys(matchObject['Teams']).length; ++j) {
-                    
+                    var teamId = Object.keys(matchObject['Teams'])[j];
+                    var teamObject = matchObject['Teams'][teamId];
+                    // Bans
+                    var phase1BanArray = teamObject['Phase1Bans'];
+                    addBansToTourneyItem(pickBansItem, phase1BanArray, teamId, 1);
+                    var phase2BanArray = teamObject['Phase2Bans'];
+                    addBansToTourneyItem(pickBansItem, phase2BanArray, teamId, 2);
+                    // Picks
+                    addPicksToTourneyItem(pickBansItem, teamObject['Players'], teamId);
                 }
                 /*
                     --------------
                     'ProfileHIdList' / 'TeamHIdList'
                     --------------
                 */
-
+                
                 /*
                     --------------
                     'GameLog'
@@ -866,5 +883,44 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
     }
     catch (error) {
         throw error;
+    }
+}
+
+/*
+    ----------------------
+    Helper Functions
+    ----------------------
+*/
+
+function addBansToTourneyItem(pickBansItem, banArray, teamId, phaseNum) {
+    var banPhaseString = 'Phase' + phaseNum + 'Bans';
+    for (var k = 0; k < banArray.length; ++k) {
+        var champBanned = banArray[k];
+        if (!(champBanned in pickBansItem)) {
+            Object.assign(pickBansItem[champBanned], initTourneyPickBans);
+        }
+        pickBansItem[champBanned][banPhaseString]++;
+        if (teamId == GLOBAL.BLUE_ID) {
+            pickBansItem[champBanned]['Blue'+banPhaseString]++;
+        }
+        else if (teamId == GLOBAL.RED_ID) {
+            pickBansItem[champBanned]['Red'+banPhaseString]++;
+        }
+    }
+}
+
+function addPicksToTourneyItem(pickBansItem, playersObject, teamId) {
+    for (var k = 0; k < Object.values(playersObject).length; ++k) {
+        var playerObject = Object.values(playersObject)[k];
+        var champPicked = playerObject['ChampId'];
+        if (!(champPicked in pickBansItem)) {
+            Object.assign(pickBansItem[champPicked], initTourneyPickBans);
+        }
+        if (teamId == GLOBAL.BLUE_ID) {
+            pickBansItem[champPicked]['BluePicks']++;
+        }
+        else if (teamId == GLOBAL.RED_ID) {
+            pickBansItem[champPicked]['RedPicks']++;
+        }
     }
 }
