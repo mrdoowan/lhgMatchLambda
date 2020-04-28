@@ -720,86 +720,32 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
         // Check 'Information' exists in tourneyDbObject
         // {MAIN}/tournaments/<tournamentShortName>
         if (!('Information' in tourneyDbObject)) {
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'SingleRecords'
-                },
-                {
-                    ':val': initTourneyInformation
-                }
-            );
             tourneyDbObject['Information'] = Object.assign({}, initTourneyInformation);
         }
-        // Check 'SingleRecords' exists in tourneyDbObject
-        // {MAIN}/tournaments/<tournamentShortName>
-        if (!('SingleRecords' in tourneyDbObject)) {
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'SingleRecords'
-                },
-                {
-                    ':val': {}
-                }
-            );
-            tourneyDbObject['SingleRecords'] = {};
+        // Check 'PickBans' in tourneyDbObject
+        // {MAIN}/tournament/<tournamentShortName>/pickbans
+        if (!('PickBans' in tourneyDbObject)) {
+            tourneyDbObject['PickBans'] = {};
         }
         // Check 'ProfileHIdList' in tourneyDbObject
         // {MAIN}/tournament/<tournamentShortName>/players
         if (!('ProfileHIdList' in tourneyDbObject)) {
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'ProfileHIdList'
-                },
-                {
-                    ':val': []
-                }
-            );
             tourneyDbObject['ProfileHIdList'] = [];
         }
         // Check 'TeamHIdList' in tourneyDbObject
         // {MAIN}/tournament/<tournamentShortName>/teams
         if (!('TeamHIdList' in tourneyDbObject)) {
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'TeamHIdList'
-                },
-                {
-                    ':val': []
-                }
-            );
             tourneyDbObject['TeamHIdList'] = [];
-        }
-        // Check 'PickBans' in tourneyDbObject
-        // {MAIN}/tournament/<tournamentShortName>/pickbans
-        if (!('PickBans' in tourneyDbObject)) {
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'PickBans'
-                },
-                {
-                    ':val': {}
-                }
-            );
-            tourneyDbObject['PickBans'] = {};
         }
         // Check 'GameLog' in tourneyDbObject
         // {MAIN}/tournament/<tournamentShortName>/games
         if (!('GameLog' in tourneyDbObject)) {
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'GameLog'
-                },
-                {
-                    ':val': {}
-                }
-            );
             tourneyDbObject['GameLog'] = {};
+        }
+        // Check 'SingleRecords' exists in tourneyDbObject
+        // {MAIN}/tournaments/<tournamentShortName>
+        if (!('SingleRecords' in tourneyDbObject)) {
+            tourneyDbObject['SingleRecords'] = {};
         }
         //#endregion
         // Make shallow copies
@@ -840,15 +786,18 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                 tourneyInfoItem['InfernalDrakes'] += sqlMatchStats.infernalDragons;
                 tourneyInfoItem['MountainDrakes'] += sqlMatchStats.mountainDragons;
                 tourneyInfoItem['ElderDrakes'] += sqlMatchStats.elderDragons;
-                /*
-                    --------------
-                    'PickBans'
-                    --------------
-                */
+
                 var matchObject = await dynamoDb.getItem('Matches', 'MatchPId', matchPId);
+                var blueTeamHId = '';
+                var redTeamHId = '';
                 for (var j = 0; j < Object.keys(matchObject['Teams']).length; ++j) {
                     var teamId = Object.keys(matchObject['Teams'])[j];
-                    var teamObject = matchObject['Teams'][teamId];
+                    var teamObject = matchObject['Teams'][teamId];    
+                    /*
+                        --------------
+                        'PickBans'
+                        --------------
+                    */
                     // Bans
                     var phase1BanArray = teamObject['Phase1Bans'];
                     addBansToTourneyItem(pickBansItem, phase1BanArray, teamId, 1);
@@ -856,19 +805,71 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     addBansToTourneyItem(pickBansItem, phase2BanArray, teamId, 2);
                     // Picks
                     addPicksToTourneyItem(pickBansItem, teamObject['Players'], teamId);
-                }
-                /*
-                    --------------
-                    'ProfileHIdList' / 'TeamHIdList'
-                    --------------
-                */
-                
-                /*
-                    --------------
-                    'GameLog'
-                    --------------
-                */
+                    /*
+                        --------------
+                        'ProfileHIdList' / 'TeamHIdList'
+                        --------------
+                    */
+                    for (var k = 0; k < Object.values(teamObject['Players']).length; ++k) {
+                        var playerObject = Object.values(teamObject['Players'][k]);
+                        profileHIdSet.add(playerObject['ProfileHId']);
+                    }
+                    teamHIdSet.add(teamObject['TeamHId']);
 
+                    /*
+                        --------------
+                        'GameLog'
+                        --------------
+                    */
+                    if (teamId == GLOBAL.BLUE_ID) { blueTeamHId = teamObject['TeamHId']; }
+                    else if (teamId == GLOBAL.RED_ID) { redTeamHId = teamObject['TeamHId']; }
+                    
+                }
+                await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+                    'SET #key = :val',
+                    {
+                        '#key': 'Information'
+                    },
+                    {
+                        ':val': tourneyInfoItem
+                    }
+                );
+                await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+                    'SET #key = :val',
+                    {
+                        '#key': 'PickBans'
+                    },
+                    {
+                        ':val': pickBansItem
+                    }
+                );
+                await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+                    'SET #key = :val',
+                    {
+                        '#key': 'ProfileHIdList'
+                    },
+                    {
+                        ':val': Array.from(profileHIdSet)
+                    }
+                );
+                await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+                    'SET #key = :val',
+                    {
+                        '#key': 'TeamHIdList'
+                    },
+                    {
+                        ':val': Array.from(teamHIdSet)
+                    }
+                );
+                await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+                    'SET #key = :val',
+                    {
+                        '#key': 'GameLog'
+                    },
+                    {
+                        ':val': gameLogTourneyItem
+                    }
+                );
                 matchLoaded = true;
             }
             /*  
@@ -878,6 +879,16 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
             */
             if (matchLoaded) {
 
+
+                await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+                    'SET #key = :val',
+                    {
+                        '#key': 'SingleRecords'
+                    },
+                    {
+                        ':val': singleRecordsItem
+                    }
+                );
             }
         }
     }
