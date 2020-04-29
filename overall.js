@@ -703,13 +703,13 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
         var profileHIdSet = new Set(teamDbObject['ProfileHIdList']);    // Add onto
         var teamHIdSet = new Set(teamDbObject['TeamHIdList']);          // Add onto
         var gameLogTourneyItem = tourneyDbObject['GameLog'];            // Add onto
-        var LeaderboardsItem = teamDbObject['Leaderboards'];
+        var leaderboardsItem = teamDbObject['Leaderboards'];
         /*  
             -------------
             Compile Data
             -------------
         */
-        var matchStatsSqlList = await mySql.callSProc('matchStatsByTournamentId', tournamentPId);
+        var matchStatsSqlList = await mySql.callSProc('matchStatsByTournamentId', tournamentPId, false);
         var matchLoaded = false;
         for (var i = 0; i < matchStatsSqlList.length; ++i) {
             var sqlMatchStats = matchStatsSqlList[i];
@@ -821,6 +821,28 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                 'Leaderboards'
                 -----------------
             */
+            var shortestGame = matchStatsSqlList[0];
+            leaderboardsItem['ShortestGame'] = {
+                'GameDuration': shortestGame.duration,
+                'MatchPId': shortestGame.riotMatchId,
+                'BlueTeamHId': teamHashIds.encode(shortestGame.blueTeamPId),
+                'RedTeamHId': teamHashIds.encode(shortestGame.redTeamPId),
+            };
+            var longestGame = matchStatsSqlList[matchStatsSqlList.length - 1];
+            leaderboardsItem['LongestGame'] = {
+                'GameDuration': longestGame.duration,
+                'MatchPId': longestGame.riotMatchId,
+                'BlueTeamHId': teamHashIds.encode(longestGame.blueTeamPId),
+                'RedTeamHId': teamHashIds.encode(longestGame.redTeamPId),
+            };
+            var mostKillsGame = await mySql.callSProc('mostKillsGameByTournamentId', tournamentPId)[0];
+            leaderboardsItem['MostKillGame'] = {
+                'Kills': mostKillsGame.totalKills,
+                'GameDuration': mostKillsGame.duration,
+                'MatchPId': mostKillsGame.riotMatchId,
+                'BlueTeamHId': teamHashIds.encode(mostKillsGame.blueTeamPId),
+                'RedTeamHId': teamHashIds.encode(mostKillsGame.redTeamPId)
+            };
             
             await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
                 'SET #key = :val',
@@ -828,7 +850,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     '#key': 'Leaderboards'
                 },
                 {
-                    ':val': LeaderboardsItem
+                    ':val': leaderboardsItem
                 }
             );
         }
