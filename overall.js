@@ -821,29 +821,48 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                 'Leaderboards'
                 -----------------
             */
-            var shortestGame = matchStatsSqlList[0];
-            leaderboardsItem['ShortestGame'] = {
-                'GameDuration': shortestGame.duration,
-                'MatchPId': shortestGame.riotMatchId,
-                'BlueTeamHId': teamHashIds.encode(shortestGame.blueTeamPId),
-                'RedTeamHId': teamHashIds.encode(shortestGame.redTeamPId),
-            };
-            var longestGame = matchStatsSqlList[matchStatsSqlList.length - 1];
-            leaderboardsItem['LongestGame'] = {
-                'GameDuration': longestGame.duration,
-                'MatchPId': longestGame.riotMatchId,
-                'BlueTeamHId': teamHashIds.encode(longestGame.blueTeamPId),
-                'RedTeamHId': teamHashIds.encode(longestGame.redTeamPId),
-            };
-            var mostKillsGame = await mySql.callSProc('mostKillsGameByTournamentId', tournamentPId)[0];
-            leaderboardsItem['MostKillGame'] = {
-                'Kills': mostKillsGame.totalKills,
-                'GameDuration': mostKillsGame.duration,
-                'MatchPId': mostKillsGame.riotMatchId,
-                'BlueTeamHId': teamHashIds.encode(mostKillsGame.blueTeamPId),
-                'RedTeamHId': teamHashIds.encode(mostKillsGame.redTeamPId)
-            };
-            
+            // Shortest Game
+            var shortestGameSqlRow = matchStatsSqlList[0];
+            leaderboardsItem['ShortestGame'] = buildDefaultLeaderboardItem(shortestGameSqlRow);
+            // Longest Game
+            var longestGameSqlRow = matchStatsSqlList[matchStatsSqlList.length - 1];
+            leaderboardsItem['LongestGame'] = buildDefaultLeaderboardItem(longestGameSqlRow);
+            // Most Kills
+            var mostKillsGameSqlRow = await mySql.callSProc('mostKillsGameByTournamentId', tournamentPId)[0];
+            leaderboardsItem['MostKillGame'] = buildDefaultLeaderboardItem(mostKillsGameSqlRow);
+            leaderboardsItem['MostKillGame']['Kills'] = mostKillsGameSqlRow.totalKills;
+            // Players Most Damage
+            var playerMostDamageList = [];
+            var mostDamageListSql = await mySql.callSProc('playerMostDamageByTournamentId', tournamentPId);
+            for (var j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
+                var mostDamageRowSql = mostDamageListSql[j];
+                var playerMostDamageItem = buildDefaultLeaderboardItem(mostDamageRowSql);
+                playerMostDamageItem['ProfileHId'] = profileHashIds.encode(mostDamageRowSql.profilePId);
+                playerMostDamageItem['ChampId'] = mostDamageRowSql.champId;
+                playerMostDamageItem['DamagePerMin'] = mostDamageRowSql.dmgDealtPerMin;
+                playerMostDamageItem['DamageDealt'] = mostDamageRowSql.damageDealt;
+                playerMostDamageList.push(playerMostDamageList);
+            }
+            leaderboardsItem['PlayerMostDamage'] = playerMostDamageList;
+            // Player Most Farm
+            var playerMostFarmList = [];
+            leaderboardsItem['PlayerMostFarm'] = playerMostFarmList;
+            // Player Most GD@Early
+            var playerMostGdEarlyList = [];
+            leaderboardsItem['PlayerMostGoldDiffEarly'] = playerMostGdEarlyList;
+            // Player Most XPD@Early
+            var playerMostXpEarlyList = [];
+            leaderboardsItem['PlayerMostXpDiffEarly'] = playerMostXpEarlyList;
+            // Player Most Vision
+            var playerMostVisionList = [];
+            leaderboardsItem['PlayerMostVision'] = playerMostVisionList;
+            // Team Top Baron Power Plays
+            var teamTopBaronPpList = [];
+            leaderboardsItem['TeamTopBaronPowerPlay'] = teamTopBaronPpList;
+            // Team Earliest Towers
+            var teamEarliestTowerList = [];
+            leaderboardsItem['TeamEarliestTower'] = teamEarliestTowerList;
+            // Update DynamoDB
             await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
                 'SET #key = :val',
                 {
@@ -897,4 +916,13 @@ function addPicksToTourneyItem(pickBansItem, playersObject, teamId) {
             pickBansItem[champPicked]['RedPicks']++;
         }
     }
+}
+
+function buildDefaultLeaderboardItem(matchSqlRow) {
+    return {
+        'GameDuration': matchSqlRow.duration,
+        'MatchPId': matchSqlRow.riotMatchId,
+        'BlueTeamHId': teamHashIds.encode(matchSqlRow.blueTeamPId),
+        'RedTeamHId': teamHashIds.encode(matchSqlRow.redTeamPId)
+    };
 }
