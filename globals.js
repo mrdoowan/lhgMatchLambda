@@ -7,8 +7,8 @@ module.exports = {
     BLUE_ID: 100,
     RED_ID: 200,
     SIDE_STRING: { 
-        [BLUE_ID]: 'Blue', 
-        [RED_ID]: 'Red' 
+        [this.BLUE_ID]: 'Blue', 
+        [this.RED_ID]: 'Red' 
     },
     BARON_DURATION_PATCH_CHANGE: '9.23',
     // Baron duration is 3 minutes after this patch, 3.5 minutes before it
