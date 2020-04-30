@@ -30,15 +30,17 @@ exports.handler = async (event, context) => {
 
 async function main() {
     try {
-        var tournamentId = inputObjects[0];
-        var tourneyDbObject = await dynamoDb.getItem('Tournament', 'TournamentPId', tournamentId);
-        if (!(tourneyDbObject == undefined || tourneyDbObject == null)) {
-            //await updateProfileItemDynamoDb(tourneyDbObject);
-            //await updateTeamItemDynamoDb(tourneyDbObject);
-            await updateTournamentItemDynamoDb(tourneyDbObject);
-        }
-        else {
-            console.error("TournamentPId '" + tournamentId + "' doesn't exist in DynamoDB!");
+        for (var i = 0; i < inputObjects.length; ++i) {
+            var tournamentId = inputObjects[i];
+            var tourneyDbObject = await dynamoDb.getItem('Tournament', 'TournamentPId', tournamentId);
+            if (!(tourneyDbObject == undefined || tourneyDbObject == null)) {
+                await updateProfileItemDynamoDb(tourneyDbObject);
+                //await updateTeamItemDynamoDb(tourneyDbObject);
+                //await updateTournamentItemDynamoDb(tourneyDbObject);
+            }
+            else {
+                console.error("TournamentPId '" + tournamentId + "' doesn't exist in DynamoDB!");
+            }
         }
     }
     catch (err) {
@@ -99,7 +101,6 @@ const initTeamSeasonGames = {
 };
 const initTeamSeasonScouting = {
     'Ongoing': false,
-    'MultiOpgg': '',
     'GamesPlayed': 0,
     'GamesWin': 0,
     'BannedByTeam': {},
@@ -155,6 +156,7 @@ const initTourneyInformation = {
 const initTourneyPickBans = {
     'BluePicks': 0,
     'RedPicks': 0,
+    'NumWins': 0,
     'Phase1Bans': 0,
     'Phase2Bans': 0,
     'BluePhase1Bans': 0,
@@ -176,11 +178,10 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
         var tournamentPId = tourneyDbObject['TournamentPId'];
         var profileIdsSqlList = await mySql.callSProc('profilePIdsByTournamentPId', tournamentPId);
         var seasonPId = tourneyInfoObject['SeasonPId'];
-        var seasonInfoObject = await dynamoDb.getItem('Season', 'SeasonPId', seasonPId)['Information'];
         //for (var i = 0; i < profileIdsSqlList.length; ++i) {
         for (var i = 0; i < 1; ++i) {
             //var profilePId = profileIdsSqlList[i]['profilePId'];
-            var profilePId = '93339240';
+            var profilePId = '44383212';
             var profileDbObject = await dynamoDb.getItem('Profile', 'ProfilePId', profilePId); // Note this is the current state in code
             /*  
                 -------------------
@@ -244,6 +245,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
             */
             // Load each Stat into Profile in tournamentId
             var matchDataList = await mySql.callSProc('playerStatsByTournamentPId', profilePId, tournamentPId);
+            var matchLoaded = false;
             for (var j = 0; j < matchDataList.length; ++j) {
                 var sqlPlayerStats = matchDataList[j];
                 var matchPId = sqlPlayerStats.riotMatchId;
@@ -342,27 +344,30 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                             ':data': profileGameItem
                         }
                     );
+                    matchLoaded = true;
                 }
             }
-            await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
-                'SET #cPlayed = :val',
-                { 
-                    '#cPlayed': 'ChampsPlayed'
-                },
-                { 
-                    ':val': champsPlayedItem
-                }
-            );
-            await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId, 
-                'SET #slog.#tId = :data',
-                {
-                    '#slog': 'StatsLog',
-                    '#tId': tournamentPId
-                },
-                {
-                    ':data': tourneyProfileStatsItem
-                }
-            );
+            if (matchLoaded) {
+                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
+                    'SET #cPlayed = :val',
+                    { 
+                        '#cPlayed': 'ChampsPlayed'
+                    },
+                    { 
+                        ':val': champsPlayedItem
+                    }
+                );
+                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId, 
+                    'SET #slog.#tId = :data',
+                    {
+                        '#slog': 'StatsLog',
+                        '#tId': tournamentPId
+                    },
+                    {
+                        ':data': tourneyProfileStatsItem
+                    }
+                );
+            }
         }
     }
     catch (error) {
@@ -376,12 +381,11 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
         var tournamentPId = tourneyDbObject['TournamentPId'];
         var teamIdsSqlList = await mySql.callSProc('teamPIdsByTournamentPId', tournamentPId);
         var seasonPId = tourneyInfoObject['SeasonPId'];
-        var seasonInfoObject = await dynamoDb.getItem('Season', 'SeasonPId', seasonPId)['Information'];
         for (var i = 0; i < teamIdsSqlList.length; ++i) {
         //for (var i = 0; i < 1; ++i) {
             var teamPId = teamIdsSqlList[i]['teamPId'];
             //var teamPId = '01930253';
-            var teamDbObject = await dynamoDb.getItem('Team', 'TeamPId', teamPId ); // Note this is the current state in code
+            var teamDbObject = await dynamoDb.getItem('Team', 'TeamPId', teamPId); // Note this is the current state in code
             /*  
                 -------------------
                 Init DynamoDB Items
@@ -456,6 +460,7 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
             */
             // Loop through all the TeamStats in tournamentId
             var teamStatsSqlListTourney = await mySql.callSProc('teamStatsByTournamentPId', teamPId, tournamentPId);
+            var matchLoaded = false;
             for (var j = 0; j < teamStatsSqlListTourney.length; ++j) {
                 var sqlTeamStats = teamStatsSqlListTourney[j];
                 var matchPId = sqlTeamStats.riotMatchId;
@@ -620,28 +625,31 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                             ':val': teamGameItem
                         }
                     );
+                    matchLoaded = true;
                 }
             }
-            await dynamoDb.updateItem('Team', 'TeamPId', teamPId, 
-                'SET #sct.#sId = :val',
-                {
-                    '#sct': 'Scouting',
-                    '#sId': seasonPId
-                },
-                {
-                    ':val': scoutingItem
-                }
-            );
-            dynamoDb.updateItem('Team', 'TeamPId', teamPId,
-                'SET #sLog.#tId = :val',
-                {
-                    '#sLog': 'StatsLog',
-                    '#tId': tournamentPId
-                },
-                {
-                    ':val': tourneyTeamStatsItem
-                }
-            );
+            if (matchLoaded) {
+                await dynamoDb.updateItem('Team', 'TeamPId', teamPId, 
+                    'SET #sct.#sId = :val',
+                    {
+                        '#sct': 'Scouting',
+                        '#sId': seasonPId
+                    },
+                    {
+                        ':val': scoutingItem
+                    }
+                );
+                dynamoDb.updateItem('Team', 'TeamPId', teamPId,
+                    'SET #sLog.#tId = :val',
+                    {
+                        '#sLog': 'StatsLog',
+                        '#tId': tournamentPId
+                    },
+                    {
+                        ':val': tourneyTeamStatsItem
+                    }
+                );
+            }
         }
     }
     catch (error) {
@@ -744,7 +752,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     var phase2BanArray = teamObject['Phase2Bans'];
                     addBansToTourneyItem(pickBansItem, phase2BanArray, teamId, 2);
                     // Picks
-                    addPicksToTourneyItem(pickBansItem, teamObject['Players'], teamId);
+                    addWinPicksToTourneyItem(pickBansItem, teamObject, teamId);
                     /*
                         --------------
                         'ProfileHIdList' / 'TeamHIdList'
@@ -781,7 +789,6 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     ':val': tourneyInfoItem
                 }
             );
-            console.log(tourneyInfoItem);
             await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
                 'SET #key = :val',
                 {
@@ -841,6 +848,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                 var playerMostDamageItem = buildDefaultLeaderboardItem(mostDamageRowSql);
                 playerMostDamageItem['ProfileHId'] = profileHashIds.encode(mostDamageRowSql.profilePId);
                 playerMostDamageItem['ChampId'] = mostDamageRowSql.champId;
+                playerMostDamageItem['Role'] = mostDamageRowSql.role;
                 playerMostDamageItem['DamagePerMin'] = mostDamageRowSql.dmgDealtPerMin;
                 playerMostDamageItem['DamageDealt'] = mostDamageRowSql.damageDealt;
                 playerMostDamageList.push(playerMostDamageItem);
@@ -854,6 +862,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                 var playerMostFarmItem = buildDefaultLeaderboardItem(mostFarmRowSql);
                 playerMostFarmItem['ProfileHId'] = profileHashIds.encode(mostFarmRowSql.profilePId);
                 playerMostFarmItem['ChampId'] = mostFarmRowSql.champId;
+                playerMostFarmItem['Role'] = mostFarmRowSql.role;
                 playerMostFarmItem['CsPerMin'] = mostFarmRowSql.csPerMin;
                 playerMostFarmItem['CreepScore'] = mostFarmRowSql.creepScore;
                 playerMostFarmList.push(playerMostFarmItem);
@@ -867,6 +876,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                 var playerMostGDiffEarlyItem = buildDefaultLeaderboardItem(mostGDiffEarlyRowSql);
                 playerMostGDiffEarlyItem['ProfileHId'] = profileHashIds.encode(mostGDiffEarlyRowSql.profilePId);
                 playerMostGDiffEarlyItem['ChampId'] = mostGDiffEarlyRowSql.champId;
+                playerMostGDiffEarlyItem['Role'] = mostGDiffEarlyRowSql.role;
                 playerMostGDiffEarlyItem['GDiffEarly'] = mostGDiffEarlyRowSql.goldDiffEarly;
                 playerMostGDiffEarlyItem['GAtEarly'] = mostGDiffEarlyRowSql.goldAtEarly;
                 playerMostGDiffEarlyList.push(playerMostGDiffEarlyItem);
@@ -880,6 +890,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                 var playerMostXpDiffEarlyItem = buildDefaultLeaderboardItem(mostXpDiffEarlyRowSql);
                 playerMostXpDiffEarlyItem['ProfileHId'] = profileHashIds.encode(mostXpDiffEarlyRowSql.profilePId);
                 playerMostXpDiffEarlyItem['ChampId'] = mostXpDiffEarlyRowSql.champId;
+                playerMostXpDiffEarlyItem['Role'] = mostXpDiffEarlyRowSql.role;
                 playerMostXpDiffEarlyItem['XpDiffEarly'] = mostXpDiffEarlyRowSql.xpDiffEarly;
                 playerMostXpDiffEarlyItem['XpAtEarly'] = mostXpDiffEarlyRowSql.xpAtEarly;
                 playerMostXpDiffEarlyList.push(playerMostXpDiffEarlyItem);
@@ -893,6 +904,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                 var playerMostVisionItem = buildDefaultLeaderboardItem(mostVisionRowSql);
                 playerMostVisionItem['ProfileHId'] = profileHashIds.encode(mostVisionRowSql.profilePId);
                 playerMostVisionItem['ChampId'] = mostVisionRowSql.champId;
+                playerMostVisionItem['Role'] = mostVisionRowSql.role;
                 playerMostVisionItem['VsPerMin'] = mostVisionRowSql.vsPerMin;
                 playerMostVisionItem['VisionScore'] = mostVisionRowSql.visionScore;
                 playerMostVisionList.push(playerMostVisionItem);
@@ -933,7 +945,6 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     ':val': leaderboardsItem
                 }
             );
-            console.log(leaderboardsItem);
         }
     }
     catch (error) {
@@ -964,7 +975,8 @@ function addBansToTourneyItem(pickBansItem, banArray, teamId, phaseNum) {
     }
 }
 
-function addPicksToTourneyItem(pickBansItem, playersObject, teamId) {
+function addWinPicksToTourneyItem(pickBansItem, teamObject, teamId) {
+    var playersObject = teamObject['Players'];
     for (var k = 0; k < Object.values(playersObject).length; ++k) {
         var playerObject = Object.values(playersObject)[k];
         var champPicked = playerObject['ChampId'];
@@ -977,6 +989,7 @@ function addPicksToTourneyItem(pickBansItem, playersObject, teamId) {
         else if (teamId == GLOBAL.RED_ID) {
             pickBansItem[champPicked]['RedPicks']++;
         }
+        pickBansItem[champPicked]['NumWins'] += teamObject['Win'];
     }
 }
 
