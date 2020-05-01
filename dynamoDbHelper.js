@@ -19,11 +19,11 @@ const PUT_INTO_DYNAMO = true;       // 'true' when comfortable to push into Dyna
 const DEBUG_DYNAMO = false;
 
 // DETAILED FUNCTION DESCRIPTION XD
-function getItemInDynamoDB(tableName, partitionName, key) {
+function getItemInDynamoDB(tableName, partitionName, itemName) {
     var params = {
         TableName: tableName,
         Key: {
-            [partitionName]: key
+            [partitionName]: itemName
         }
     };
     return new Promise(function(resolve, reject) {
@@ -33,24 +33,24 @@ function getItemInDynamoDB(tableName, partitionName, key) {
                     reject(err);
                 }
                 else {
-                    console.log("Dynamo DB: Get Item \'" + key + "\' from Table \"" + tableName + "\"");
+                    console.log("Dynamo DB: Get Item \'" + itemName + "\' from Table \"" + tableName + "\"");
                     resolve(data['Item']);
                 }
             });
         }
         catch (error) {
-            console.error("ERROR - getItemInDynamoDB \'" + tableName + "\' Promise rejected.")
+            console.error("ERROR - getItemInDynamoDB \'" + tableName + "\' Promise rejected with Item \'" + itemName + "\'.")
             reject(error);
         }
     });
 }
 
 // DETAILED FUNCTION DESCRIPTION XD
-function doesItemExistInDynamoDB(tableName, partitionName, key) {
+function doesItemExistInDynamoDB(tableName, partitionName, itemName) {
     var params = {
         TableName: tableName,
         Key: {
-            [partitionName]: key
+            [partitionName]: itemName
         },
         AttributesToGet: [partitionName],
     };
@@ -66,14 +66,14 @@ function doesItemExistInDynamoDB(tableName, partitionName, key) {
             });
         }
         catch (error) {
-            console.error("ERROR - doesItemExistInDynamoDB \'" + tableName + "\' Promise rejected.");
+            console.error("ERROR - doesItemExistInDynamoDB \'" + tableName + "\' Promise rejected with Item \'" + itemName + "\'.");
             reject(error);
         }
     });
 }
 
 // DETAILED FUNCTION DESCRIPTION XD
-function putItemInDynamoDB(tableName, items, key) {
+function putItemInDynamoDB(tableName, items, itemName) {
     if (PUT_INTO_DYNAMO) {
         var params = {
             TableName: tableName,
@@ -82,11 +82,11 @@ function putItemInDynamoDB(tableName, items, key) {
         return new Promise(function(resolve, reject) {
             dynamoDB.put(params, function(err, data) {
                 if (err) {
-                    console.error("ERROR - putItemInDynamoDB \'" + tableName + "\' Promise rejected.");
+                    console.error("ERROR - putItemInDynamoDB \'" + tableName + "\' Promise rejected with Item \'" + itemName + "\'.");
                     reject(err);
                 }
                 else {
-                    console.log("Dynamo DB: Put Item \'" + key + "\' into \"" + tableName + "\" Table!");
+                    console.log("Dynamo DB: Put Item \'" + itemName + "\' into \"" + tableName + "\" Table!");
                     resolve(data);
                 }
             });
@@ -99,11 +99,11 @@ function putItemInDynamoDB(tableName, items, key) {
 }
 
 // DETAILED FUNCTION DESCRIPTION XD
-function updateItemInDynamoDB(tableName, partitionName, key, updateExp, expAttNames, expAttValues) {
+function updateItemInDynamoDB(tableName, partitionName, itemName, updateExp, expAttNames, expAttValues) {
     var params = {
         TableName: tableName,
         Key: {
-            [partitionName]: key
+            [partitionName]: itemName
         },
         UpdateExpression: updateExp,
         ExpressionAttributeNames: expAttNames,
@@ -113,11 +113,11 @@ function updateItemInDynamoDB(tableName, partitionName, key, updateExp, expAttNa
         return new Promise(function(resolve, reject) {
             dynamoDB.update(params, function(err, data) {
                 if (err) {
-                    console.error("ERROR - updateItemInDynamoDB \'" + tableName + "\' Promise rejected.")
+                    console.error("ERROR - updateItemInDynamoDB \'" + tableName + "\' Promise rejected with Item \'" + itemName + "\' and key(s) \"" + Object.values(expAttNames) + "\".")
                     reject(err); 
                 }
                 else {
-                    console.log("Dynamo DB: Update Item \'" + key + "\' in Table \"" + tableName + "\" with key \"" + Object.values(expAttNames) + "\"");
+                    console.log("Dynamo DB: Update Item \'" + itemName + "\' in Table \"" + tableName + "\" with key(s) \"" + Object.values(expAttNames) + "\"");
                     resolve(data);
                 }
             });

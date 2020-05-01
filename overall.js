@@ -6,6 +6,7 @@
 
 /*  Declaring npm modules */
 const Hashids = require('hashids/cjs'); // For hashing and unhashing
+const clonedeep = require('lodash.clonedeep'); // for deep cloning
 
 /*  Import helper function modules */
 const GLOBAL = require('./globals');
@@ -34,7 +35,7 @@ async function main() {
             var tournamentId = inputObjects[i];
             var tourneyDbObject = await dynamoDb.getItem('Tournament', 'TournamentPId', tournamentId);
             if (!(tourneyDbObject == undefined || tourneyDbObject == null)) {
-                //await updateProfileItemDynamoDb(tourneyDbObject);
+                await updateProfileItemDynamoDb(tourneyDbObject);
                 await updateTeamItemDynamoDb(tourneyDbObject);
                 await updateTournamentItemDynamoDb(tourneyDbObject);
             }
@@ -145,7 +146,7 @@ const initTeamTourneyStats = {
 const initTourneyStats = {
     'NumberGames': 0,
     'BlueSideWins': 0,
-    'TotalDragonsKilled': 0,
+    'TotalGameDuration': 0,
     'CloudDrakes': 0,
     'OceanDrakes': 0,
     'InfernalDrakes': 0,
@@ -172,14 +173,14 @@ const initTourneyPickBans = {
 */
 
 async function updateProfileItemDynamoDb(tourneyDbObject) {
+    var tournamentPId = tourneyDbObject['TournamentPId'];
+    console.log("FUNCTION: updateProfileItemDynamoDb of tId" + tournamentPId);
     try {
         var tourneyInfoObject = tourneyDbObject['Information'];
-        var tournamentPId = tourneyDbObject['TournamentPId'];
         var profileIdsSqlList = await mySql.callSProc('profilePIdsByTournamentPId', tournamentPId);
         var seasonPId = tourneyInfoObject['SeasonPId'];
         for (var i = 0; i < profileIdsSqlList.length; ++i) {
-        //for (var i = 0; i < 1; ++i) {
-            //var profilePId = '44383212';
+            //var profilePId = '42386066';
             var profilePId = profileIdsSqlList[i]['profilePId'];
             var profileDbObject = await dynamoDb.getItem('Profile', 'ProfilePId', profilePId); // Note this is the current state in code
             /*  
@@ -202,7 +203,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                         ':val': initProfileGameLog
                     }
                 );
-                profileDbObject['GameLog'] = Object.assign({}, initProfileGameLog);
+                profileDbObject['GameLog'] = clonedeep(initProfileGameLog);
             }
             // Check if that season exists in the GameLogs
             else if (!(seasonPId in profileDbObject['GameLog'])) {
@@ -216,7 +217,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                         ':val': initProfileSeasonGames
                     }
                 );
-                profileDbObject['GameLog'][seasonPId] = Object.assign({}, initProfileSeasonGames);
+                profileDbObject['GameLog'][seasonPId] = clonedeep(initProfileSeasonGames);
             }
             // Check if 'StatsLog' exists in Profile
             // {MAIN}/profile/<profileName>/stats/<seasonShortName>
@@ -231,7 +232,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                         ':val': initStatsLog
                     }
                 );
-                profileDbObject['StatsLog'] = Object.assign({}, initStatsLog);
+                profileDbObject['StatsLog'] = clonedeep(initStatsLog);
             }
             // Check if that TournamentPId in StatsLog
             else if (!(tournamentPId in profileDbObject['StatsLog'])) {
@@ -255,6 +256,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
             // Load each Stat into Profile in tournamentId
             var matchDataList = await mySql.callSProc('playerStatsByTournamentPId', profilePId, tournamentPId);
             var matchLoaded = false;
+            console.log("Profile \'" + profilePId + "\' played " + matchDataList.length + " matches.");
             for (var j = 0; j < matchDataList.length; ++j) {
                 var sqlPlayerStats = matchDataList[j];
                 var matchPId = sqlPlayerStats.riotMatchId;
@@ -279,7 +281,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                     // Check if the Role they played exists
                     var role = sqlPlayerStats.role;
                     if (!(role in tourneyProfileStatsItem)) {
-                        tourneyProfileStatsItem[role] = Object.assign({}, initProfileTourneyStats);
+                        tourneyProfileStatsItem[role] = clonedeep(initProfileTourneyStats);
                     }
                     tourneyProfileStatsItem[role]['GamesPlayed']++;
                     tourneyProfileStatsItem[role]['GamesPlayedOverEarly'] += (sqlPlayerStats.duration >= GLOBAL.MINUTE_AT_EARLY * 60);
@@ -384,13 +386,13 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
 }
 
 async function updateTeamItemDynamoDb(tourneyDbObject) {
+    var tournamentPId = tourneyDbObject['TournamentPId'];
+    console.log("FUNCTION: updateTeamItemDynamoDb of tId" + tournamentPId);
     try {
         var tourneyInfoObject = tourneyDbObject['Information'];
-        var tournamentPId = tourneyDbObject['TournamentPId'];
         var teamIdsSqlList = await mySql.callSProc('teamPIdsByTournamentPId', tournamentPId);
         var seasonPId = tourneyInfoObject['SeasonPId'];
         for (var i = 0; i < teamIdsSqlList.length; ++i) {
-        //for (var i = 0; i < 1; ++i) {
             //var teamPId = '01930253';
             var teamPId = teamIdsSqlList[i]['teamPId'];
             var teamDbObject = await dynamoDb.getItem('Team', 'TeamPId', teamPId); // Note this is the current state in code
@@ -413,20 +415,20 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         ':val': initTeamGameLog
                     }
                 );
-                teamDbObject['GameLog'] = Object.assign({}, initTeamGameLog);
+                teamDbObject['GameLog'] = clonedeep(initTeamGameLog);
             }
             else if (!(seasonPId in teamDbObject['GameLog'])) {
                 await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
-                    'SET #key1.#sId = :val',
+                    'SET #gLog.#sId = :val',
                     {
-                        '#key1': 'GameLog',
+                        '#gLog': 'GameLog',
                         '#sId': seasonPId,
                     },
                     {
                         ':val': initTeamSeasonGames
                     }
                 );
-                teamDbObject['GameLog'][seasonPId] = Object.assign({}, initTeamSeasonGames);
+                teamDbObject['GameLog'][seasonPId] = clonedeep(initTeamSeasonGames);
             }
             // Check 'Scouting' exists in TeamItem 
             // {MAIN}/team/<teamName>/scouting/<seasonShortName>
@@ -441,10 +443,10 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         ':val': initTeamScouting
                     }
                 );
-                teamDbObject['Scouting'] = Object.assign({}, initTeamScouting);
+                teamDbObject['Scouting'] = clonedeep(initTeamScouting);
             }
             else if (!(seasonPId in teamDbObject['Scouting'])) {
-                teamDbObject['Scouting'][seasonPId] = Object.assign({}, initTeamSeasonScouting);
+                teamDbObject['Scouting'][seasonPId] = clonedeep(initTeamSeasonScouting);
             }
             // Check 'StatsLog' exists in TeamItem
             // {MAIN}/team/<teamName>/stats/<tournamentShortName>
@@ -459,11 +461,11 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         ':val': initTeamStatsLog
                     }
                 );
-                teamDbObject['StatsLog'] = Object.assign({}, initTeamStatsLog);
+                teamDbObject['StatsLog'] = clonedeep(initTeamStatsLog);
             }
             // Check if that tournamentId in StatsLog
             else if (!(tournamentPId in teamDbObject['StatsLog'])) {
-                teamDbObject['StatsLog'][tournamentPId] = Object.assign({}, initTeamTourneyStats);
+                teamDbObject['StatsLog'][tournamentPId] = clonedeep(initTeamTourneyStats);
             }
             //#endregion
             // Make shallow copies
@@ -645,16 +647,6 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         ':val': scoutingItem
                     }
                 );
-                dynamoDb.updateItem('Team', 'TeamPId', teamPId,
-                    'SET #sLog.#tId = :val',
-                    {
-                        '#sLog': 'StatsLog',
-                        '#tId': tournamentPId
-                    },
-                    {
-                        ':val': tourneyTeamStatsItem
-                    }
-                );
                 await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
                     'SET #key1.#sId.#key2 = :val',
                     {
@@ -666,6 +658,16 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         ':val': gameLogTeamItem
                     }
                 );
+                dynamoDb.updateItem('Team', 'TeamPId', teamPId,
+                    'SET #sLog.#tId = :val',
+                    {
+                        '#sLog': 'StatsLog',
+                        '#tId': tournamentPId
+                    },
+                    {
+                        ':val': tourneyTeamStatsItem
+                    }
+                );
             }
         }
     }
@@ -675,8 +677,9 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
 }
 
 async function updateTournamentItemDynamoDb(tourneyDbObject) {
+    var tournamentPId = tourneyDbObject['TournamentPId'];
+    console.log("FUNCTION: updateTournamentItemDynamoDb of tId" + tournamentPId);
     try {
-        var tournamentPId = tourneyDbObject['TournamentPId'];
         /*  
             -------------------
             Init DynamoDB Items
@@ -686,7 +689,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
         // Check 'TourneyStats' exists in tourneyDbObject
         // {MAIN}/tournaments/<tournamentShortName>
         if (!('TourneyStats' in tourneyDbObject)) {
-            tourneyDbObject['TourneyStats'] = Object.assign({}, initTourneyStats);
+            tourneyDbObject['TourneyStats'] = clonedeep(initTourneyStats);
         }
         // Check 'PickBans' in tourneyDbObject
         // {MAIN}/tournament/<tournamentShortName>/pickbans
@@ -738,8 +741,8 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
                     --------------
                 */
                 tourneyStatsItem['NumberGames']++;
-                tourneyStatsItem['TotalGameDuration'] += matchStatsSqlRow.duration;
                 tourneyStatsItem['BlueSideWins'] += matchStatsSqlRow.blueWin;
+                tourneyStatsItem['TotalGameDuration'] += matchStatsSqlRow.duration;
                 tourneyStatsItem['CloudDrakes'] += matchStatsSqlRow.cloudDragons;
                 tourneyStatsItem['OceanDrakes'] += matchStatsSqlRow.oceanDragons;
                 tourneyStatsItem['InfernalDrakes'] += matchStatsSqlRow.infernalDragons;
@@ -972,7 +975,7 @@ function addBansToTourneyItem(pickBansItem, banArray, teamId, phaseNum) {
     for (var k = 0; k < banArray.length; ++k) {
         var champBanned = banArray[k];
         if (!(champBanned in pickBansItem)) {
-            pickBansItem[champBanned] = Object.assign({}, initTourneyPickBans);
+            pickBansItem[champBanned] = clonedeep(initTourneyPickBans);
         }
         pickBansItem[champBanned][banPhaseString]++;
         if (teamId == GLOBAL.BLUE_ID) {
@@ -990,7 +993,7 @@ function addWinPicksToTourneyItem(pickBansItem, teamObject, teamId) {
         var playerObject = Object.values(playersObject)[k];
         var champPicked = playerObject['ChampId'];
         if (!(champPicked in pickBansItem)) {
-            pickBansItem[champPicked] = Object.assign({}, initTourneyPickBans);
+            pickBansItem[champPicked] = clonedeep(initTourneyPickBans);
         }
         if (teamId == GLOBAL.BLUE_ID) {
             pickBansItem[champPicked]['BluePicks']++;

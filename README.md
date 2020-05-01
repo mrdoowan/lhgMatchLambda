@@ -10,6 +10,7 @@ The following npm modules are used:
 - hashids
 - aws-sdk
 - kayn
+- lodash.clonedeep
 
 ## model.js
 
