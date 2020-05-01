@@ -34,9 +34,9 @@ async function main() {
             var tournamentId = inputObjects[i];
             var tourneyDbObject = await dynamoDb.getItem('Tournament', 'TournamentPId', tournamentId);
             if (!(tourneyDbObject == undefined || tourneyDbObject == null)) {
-                await updateProfileItemDynamoDb(tourneyDbObject);
-                //await updateTeamItemDynamoDb(tourneyDbObject);
-                //await updateTournamentItemDynamoDb(tourneyDbObject);
+                //await updateProfileItemDynamoDb(tourneyDbObject);
+                await updateTeamItemDynamoDb(tourneyDbObject);
+                await updateTournamentItemDynamoDb(tourneyDbObject);
             }
             else {
                 console.error("TournamentPId '" + tournamentId + "' doesn't exist in DynamoDB!");
@@ -44,7 +44,7 @@ async function main() {
         }
     }
     catch (err) {
-        console.log("ERROR thrown! Information below.");
+        console.log("ERROR thrown! Info below.");
         console.log("Stack: ", err.stack);
         console.log("Name: ", err.name);
         console.log("Message: ", err.message);
@@ -142,8 +142,7 @@ const initTeamTourneyStats = {
     'TotalWardsCleared': 0,
     'TotalEnemyWardsPlaced': 0
 };
-const initTourneyInformation = {
-    'SeasonPId': 0,
+const initTourneyStats = {
     'NumberGames': 0,
     'BlueSideWins': 0,
     'TotalDragonsKilled': 0,
@@ -178,10 +177,10 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
         var tournamentPId = tourneyDbObject['TournamentPId'];
         var profileIdsSqlList = await mySql.callSProc('profilePIdsByTournamentPId', tournamentPId);
         var seasonPId = tourneyInfoObject['SeasonPId'];
-        //for (var i = 0; i < profileIdsSqlList.length; ++i) {
-        for (var i = 0; i < 1; ++i) {
-            //var profilePId = profileIdsSqlList[i]['profilePId'];
-            var profilePId = '44383212';
+        for (var i = 0; i < profileIdsSqlList.length; ++i) {
+        //for (var i = 0; i < 1; ++i) {
+            //var profilePId = '44383212';
+            var profilePId = profileIdsSqlList[i]['profilePId'];
             var profileDbObject = await dynamoDb.getItem('Profile', 'ProfilePId', profilePId); // Note this is the current state in code
             /*  
                 -------------------
@@ -207,6 +206,16 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
             }
             // Check if that season exists in the GameLogs
             else if (!(seasonPId in profileDbObject['GameLog'])) {
+                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
+                    'SET #gLog.#sId = :val',
+                    {
+                        '#gLog': 'GameLog',
+                        '#sId': seasonPId
+                    },
+                    {
+                        ':val': initProfileSeasonGames
+                    }
+                );
                 profileDbObject['GameLog'][seasonPId] = Object.assign({}, initProfileSeasonGames);
             }
             // Check if 'StatsLog' exists in Profile
@@ -331,19 +340,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                         'TeamGold': sqlPlayerStats.teamGold,
                         'TeamVS': sqlPlayerStats.teamVS,
                     };
-                    //gameLogProfileItem[matchPId] = profileGameItem; // Do we need to do this? It's all static
-                    await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
-                        'SET #log.#sId.#mtch.#mId = :data',
-                        {
-                            '#log': 'GameLog',
-                            '#sId': seasonPId,
-                            '#mtch': 'Matches',
-                            '#mId': sqlPlayerStats.riotMatchId
-                        },
-                        {
-                            ':data': profileGameItem
-                        }
-                    );
+                    gameLogProfileItem[matchPId] = profileGameItem;
                     matchLoaded = true;
                 }
             }
@@ -367,6 +364,17 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                         ':data': tourneyProfileStatsItem
                     }
                 );
+                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
+                    'SET #log.#sId.#mtch = :data',
+                    {
+                        '#log': 'GameLog',
+                        '#sId': seasonPId,
+                        '#mtch': 'Matches'
+                    },
+                    {
+                        ':data': gameLogProfileItem
+                    }
+                );
             }
         }
     }
@@ -383,8 +391,8 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
         var seasonPId = tourneyInfoObject['SeasonPId'];
         for (var i = 0; i < teamIdsSqlList.length; ++i) {
         //for (var i = 0; i < 1; ++i) {
-            var teamPId = teamIdsSqlList[i]['teamPId'];
             //var teamPId = '01930253';
+            var teamPId = teamIdsSqlList[i]['teamPId'];
             var teamDbObject = await dynamoDb.getItem('Team', 'TeamPId', teamPId); // Note this is the current state in code
             /*  
                 -------------------
@@ -408,6 +416,16 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                 teamDbObject['GameLog'] = Object.assign({}, initTeamGameLog);
             }
             else if (!(seasonPId in teamDbObject['GameLog'])) {
+                await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
+                    'SET #key1.#sId = :val',
+                    {
+                        '#key1': 'GameLog',
+                        '#sId': seasonPId,
+                    },
+                    {
+                        ':val': initTeamSeasonGames
+                    }
+                );
                 teamDbObject['GameLog'][seasonPId] = Object.assign({}, initTeamSeasonGames);
             }
             // Check 'Scouting' exists in TeamItem 
@@ -422,7 +440,7 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                     {
                         ':val': initTeamScouting
                     }
-                )
+                );
                 teamDbObject['Scouting'] = Object.assign({}, initTeamScouting);
             }
             else if (!(seasonPId in teamDbObject['Scouting'])) {
@@ -459,7 +477,7 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                 -------------
             */
             // Loop through all the TeamStats in tournamentId
-            var teamStatsSqlListTourney = await mySql.callSProc('teamStatsByTournamentPId', teamPId, tournamentPId);
+            var teamStatsSqlListTourney = await mySql.callSProc('teamStatsByTeamIdTournamentPId', teamPId, tournamentPId);
             var matchLoaded = false;
             for (var j = 0; j < teamStatsSqlListTourney.length; ++j) {
                 var sqlTeamStats = teamStatsSqlListTourney[j];
@@ -612,19 +630,7 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                             }
                         }
                     }
-                    //gameLogTeamItem[matchPId] = teamGameItem; // Do we need to do this? It's all static
-                    await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
-                        'SET #key1.#sId.#key2.#mId = :val',
-                        {
-                            '#key1': 'GameLog',
-                            '#sId': seasonPId,
-                            '#key2': 'Matches',
-                            '#mId': matchPId
-                        },
-                        {
-                            ':val': teamGameItem
-                        }
-                    );
+                    gameLogTeamItem[matchPId] = teamGameItem;
                     matchLoaded = true;
                 }
             }
@@ -649,6 +655,17 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         ':val': tourneyTeamStatsItem
                     }
                 );
+                await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
+                    'SET #key1.#sId.#key2 = :val',
+                    {
+                        '#key1': 'GameLog',
+                        '#sId': seasonPId,
+                        '#key2': 'Matches'
+                    },
+                    {
+                        ':val': gameLogTeamItem
+                    }
+                );
             }
         }
     }
@@ -666,10 +683,10 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
             -------------------
         */
         // #region Init Items
-        // Check 'Information' exists in tourneyDbObject
+        // Check 'TourneyStats' exists in tourneyDbObject
         // {MAIN}/tournaments/<tournamentShortName>
-        if (!('Information' in tourneyDbObject)) {
-            tourneyDbObject['Information'] = Object.assign({}, initTourneyInformation);
+        if (!('TourneyStats' in tourneyDbObject)) {
+            tourneyDbObject['TourneyStats'] = Object.assign({}, initTourneyStats);
         }
         // Check 'PickBans' in tourneyDbObject
         // {MAIN}/tournament/<tournamentShortName>/pickbans
@@ -698,15 +715,7 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
         }
         //#endregion
         // Make shallow copies
-        var tourneyInfoItem = tourneyDbObject['Information'];           // Add onto
-        if (!('NumberGames' in tourneyInfoItem)) { tourneyInfoItem['NumberGames'] = 0; }
-        if (!('TotalGameDuration' in tourneyInfoItem)) { tourneyInfoItem['TotalGameDuration'] = 0; }
-        if (!('BlueSideWins' in tourneyInfoItem)) { tourneyInfoItem['BlueSideWins'] = 0; }
-        if (!('CloudDrakes' in tourneyInfoItem)) { tourneyInfoItem['CloudDrakes'] = 0; }
-        if (!('OceanDrakes' in tourneyInfoItem)) { tourneyInfoItem['OceanDrakes'] = 0; }
-        if (!('InfernalDrakes' in tourneyInfoItem)) { tourneyInfoItem['InfernalDrakes'] = 0; }
-        if (!('MountainDrakes' in tourneyInfoItem)) { tourneyInfoItem['MountainDrakes'] = 0; }
-        if (!('ElderDrakes' in tourneyInfoItem)) { tourneyInfoItem['ElderDrakes'] = 0; }
+        var tourneyStatsItem = tourneyDbObject['TourneyStats'];             // Add onto
         var pickBansItem = tourneyDbObject['PickBans'];                     // Add onto
         var profileHIdSet = new Set(tourneyDbObject['ProfileHIdList']);     // Add onto
         var teamHIdSet = new Set(tourneyDbObject['TeamHIdList']);           // Add onto
@@ -725,17 +734,17 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
             if (!(matchPId in gameLogTourneyItem)) {
                 /*  
                     --------------
-                    'Information'
+                    'TourneyStats'
                     --------------
                 */
-                tourneyInfoItem['NumberGames']++;
-                tourneyInfoItem['TotalGameDuration'] += matchStatsSqlRow.duration;
-                tourneyInfoItem['BlueSideWins'] += matchStatsSqlRow.blueWin;
-                tourneyInfoItem['CloudDrakes'] += matchStatsSqlRow.cloudDragons;
-                tourneyInfoItem['OceanDrakes'] += matchStatsSqlRow.oceanDragons;
-                tourneyInfoItem['InfernalDrakes'] += matchStatsSqlRow.infernalDragons;
-                tourneyInfoItem['MountainDrakes'] += matchStatsSqlRow.mountainDragons;
-                tourneyInfoItem['ElderDrakes'] += matchStatsSqlRow.elderDragons;
+                tourneyStatsItem['NumberGames']++;
+                tourneyStatsItem['TotalGameDuration'] += matchStatsSqlRow.duration;
+                tourneyStatsItem['BlueSideWins'] += matchStatsSqlRow.blueWin;
+                tourneyStatsItem['CloudDrakes'] += matchStatsSqlRow.cloudDragons;
+                tourneyStatsItem['OceanDrakes'] += matchStatsSqlRow.oceanDragons;
+                tourneyStatsItem['InfernalDrakes'] += matchStatsSqlRow.infernalDragons;
+                tourneyStatsItem['MountainDrakes'] += matchStatsSqlRow.mountainDragons;
+                tourneyStatsItem['ElderDrakes'] += matchStatsSqlRow.elderDragons;
 
                 var matchObject = await dynamoDb.getItem('Matches', 'MatchPId', matchPId.toString());
                 for (var j = 0; j < Object.keys(matchObject['Teams']).length; ++j) {
@@ -783,10 +792,10 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
             await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
                 'SET #key = :val',
                 {
-                    '#key': 'Information'
+                    '#key': 'TourneyStats'
                 },
                 {
-                    ':val': tourneyInfoItem
+                    ':val': tourneyStatsItem
                 }
             );
             await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,

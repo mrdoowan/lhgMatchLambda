@@ -117,7 +117,7 @@ function updateItemInDynamoDB(tableName, partitionName, key, updateExp, expAttNa
                     reject(err); 
                 }
                 else {
-                    console.log("Dynamo DB: Update Item \'" + key + "\' in Table \"" + tableName + "\"");
+                    console.log("Dynamo DB: Update Item \'" + key + "\' in Table \"" + tableName + "\" with key \"" + Object.values(expAttNames) + "\"");
                     resolve(data);
                 }
             });
