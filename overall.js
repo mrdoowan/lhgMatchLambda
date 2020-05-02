@@ -174,13 +174,12 @@ const initTourneyPickBans = {
 
 async function updateProfileItemDynamoDb(tourneyDbObject) {
     var tournamentPId = tourneyDbObject['TournamentPId'];
-    console.log("FUNCTION: updateProfileItemDynamoDb of tId" + tournamentPId);
+    console.log("FUNCTION: updateProfileItemDynamoDb of tId '" + tournamentPId + "'");
     try {
         var tourneyInfoObject = tourneyDbObject['Information'];
         var profileIdsSqlList = await mySql.callSProc('profilePIdsByTournamentPId', tournamentPId);
         var seasonPId = tourneyInfoObject['SeasonPId'];
         for (var i = 0; i < profileIdsSqlList.length; ++i) {
-            //var profilePId = '42386066';
             var profilePId = profileIdsSqlList[i]['profilePId'];
             var profileDbObject = await dynamoDb.getItem('Profile', 'ProfilePId', profilePId); // Note this is the current state in code
             /*  
@@ -387,13 +386,12 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
 
 async function updateTeamItemDynamoDb(tourneyDbObject) {
     var tournamentPId = tourneyDbObject['TournamentPId'];
-    console.log("FUNCTION: updateTeamItemDynamoDb of tId" + tournamentPId);
+    console.log("FUNCTION: updateTeamItemDynamoDb of tId '" + tournamentPId + "'");
     try {
         var tourneyInfoObject = tourneyDbObject['Information'];
         var teamIdsSqlList = await mySql.callSProc('teamPIdsByTournamentPId', tournamentPId);
         var seasonPId = tourneyInfoObject['SeasonPId'];
         for (var i = 0; i < teamIdsSqlList.length; ++i) {
-            //var teamPId = '01930253';
             var teamPId = teamIdsSqlList[i]['teamPId'];
             var teamDbObject = await dynamoDb.getItem('Team', 'TeamPId', teamPId); // Note this is the current state in code
             /*  
@@ -678,7 +676,7 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
 
 async function updateTournamentItemDynamoDb(tourneyDbObject) {
     var tournamentPId = tourneyDbObject['TournamentPId'];
-    console.log("FUNCTION: updateTournamentItemDynamoDb of tId" + tournamentPId);
+    console.log("FUNCTION: updateTournamentItemDynamoDb of tId '" + tournamentPId + "'");
     try {
         /*  
             -------------------

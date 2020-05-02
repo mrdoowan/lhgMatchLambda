@@ -1,3 +1,6 @@
+# 0.8.0
+* overall.js finished completely. Still in prototype before productionize for DynamoDB.
+
 # 0.7.0
 * Added module dependencies for dynamoDB and mySql helper functions
 

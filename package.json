@@ -1,7 +1,7 @@
 {
   "name": "lhg-lambda-nodejs",
-  "version": "0.6.0",
-  "description": "AWS Lambda Function to process Riot API match endpoint in Node.js upon conclusion of a LHG match",
+  "version": "0.8.0",
+  "description": "LHG's AWS Lambda Function to process Riot API match endpoint in NodeJS upon conclusion of a competitive match",
   "main": "index.js",
   "dependencies": {
     "aws-sdk": "^2.653.0",
