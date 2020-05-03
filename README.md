@@ -12,7 +12,7 @@ The following npm modules are used:
 - kayn
 - lodash.clonedeep
 
-## model.js
+## match.js
 
 TBD
 

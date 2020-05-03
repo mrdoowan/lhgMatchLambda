@@ -26,6 +26,11 @@ function getItemInDynamoDB(tableName, partitionName, itemName) {
             [partitionName]: itemName
         }
     };
+    if (arguments.length > 3) {
+        var argArray = Array.prototype.slice.call(arguments);
+        var itemNames = argArray.slice(3);
+        params['AttributesToGet'] = itemNames;
+    }
     return new Promise(function(resolve, reject) {
         try {
             dynamoDB.get(params, function(err, data) {
