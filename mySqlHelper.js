@@ -32,7 +32,7 @@ function insertMySQLQuery(queryObject, tableName) {
     if (INSERT_INTO_MYSQL) {
         return new Promise(function(resolve, reject) {
             try {
-                var queryStr = 'INSERT INTO ' + tableName + ' (';
+                let queryStr = 'INSERT INTO ' + tableName + ' (';
                 Object.keys(queryObject).forEach(function(columnName) {
                     queryStr += (columnName + ',');
                 });
@@ -69,12 +69,12 @@ function insertMySQLQuery(queryObject, tableName) {
 
 // DETAILED FUNCTION DESCRIPTION XD
 function sProcMySqlQuery(sProcName) {
-    var argArray = arguments; // Because arguments gets replaced by the function below
+    let argArray = arguments; // Because arguments gets replaced by the function below
     return new Promise(function(resolve, reject) {
         try {
-            var queryStr = "CALL " + sProcName + "(";
-            for (var i = 1; i < argArray.length; ++i) {
-                var arg = argArray[i];
+            let queryStr = "CALL " + sProcName + "(";
+            for (let i = 1; i < argArray.length; ++i) {
+                let arg = argArray[i];
                 arg = (typeof arg === "string") ? '\'' + arg + '\'' : arg;
                 queryStr += arg + ",";
             }
