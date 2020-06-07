@@ -39,7 +39,7 @@ const kayn = Kayn(process.env.RIOT_API_KEY)({
 });
 
 /*  Main AWS Lambda Function. We'll come back to this later */
-exports.handler = async (event, context) => {
+exports.handler = async (event) => {
     
 };
 

@@ -55,21 +55,7 @@ const kayn = Kayn(process.env.RIOT_API_KEY)({
 });
 
 /*
-    Input will have the following template:
-    {
-        gameId: 
-        players: [
-            {
-                profilePId: 'PROFILE_PID',
-                championId: CHAMP_ID,
-                role: 'TOP'
-            },
-        ],
-        blueTeamPId: ,
-        redTeamPId: ,
-        seasonPId: ,
-        tournamentPId: ,
-    }
+    Input will take the Match 'Setup' Object in DynamoDB:
 */
 exports.handler = async (event) => {
     
