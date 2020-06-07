@@ -3,24 +3,23 @@ module.exports = {
     getItem: getItemInDynamoDB,
     updateItem: updateItemInDynamoDB,
     updateTest: updateTestInDynamoDB,
-    doesItemExist: doesItemExistInDynamoDB,
     putItem: putItemInDynamoDB,
     putTest: putTestInDynamoDB,
-    scanTable: scanTableInDynamoDB,
+    scanTable: scanTableLoopInDynamoDB,
 }
 
 /*  Declaring AWS npm modules */
-let AWS = require('aws-sdk'); // Interfacing with DynamoDB
+var AWS = require('aws-sdk'); // Interfacing with DynamoDB
 /*  Configurations of npm modules */
 AWS.config.update({ region: 'us-east-2' });
-let dynamoDB = new AWS.DynamoDB.DocumentClient({ apiVersion: '2012-08-10' });
+var dynamoDB = new AWS.DynamoDB.DocumentClient({ apiVersion: '2012-08-10' });
 
 /*  Put 'false' to test without affecting the databases. */
-const PUT_INTO_DYNAMO = true;       // 'true' when comfortable to push into DynamoDB
+const PUT_INTO_DYNAMO = false;       // 'true' when comfortable to push into DynamoDB
 
-// DETAILED FUNCTION DESCRIPTION XD
+// Returns 'undefined' if key item does NOT EXIST
 function getItemInDynamoDB(tableName, partitionName, keyValue, attributeNames=[]) {
-    let params = {
+    var params = {
         TableName: tableName,
         Key: {
             [partitionName]: keyValue
@@ -49,36 +48,9 @@ function getItemInDynamoDB(tableName, partitionName, keyValue, attributeNames=[]
 }
 
 // DETAILED FUNCTION DESCRIPTION XD
-function doesItemExistInDynamoDB(tableName, partitionName, keyValue) {
-    let params = {
-        TableName: tableName,
-        Key: {
-            [partitionName]: keyValue
-        },
-        AttributesToGet: [partitionName],
-    };
-    return new Promise(function(resolve, reject) {
-        try {
-            dynamoDB.get(params, function(err, data) {
-                if (err) {
-                    reject(err);
-                }
-                else {
-                    resolve('Item' in data);
-                }
-            });
-        }
-        catch (error) {
-            console.error("ERROR - doesItemExistInDynamoDB \'" + tableName + "\' Promise rejected.");
-            reject(error);
-        }
-    });
-}
-
-// DETAILED FUNCTION DESCRIPTION XD
 function putItemInDynamoDB(tableName, items, keyValue) {
     if (PUT_INTO_DYNAMO) {
-        let params = {
+        var params = {
             TableName: tableName,
             Item: items
         };
@@ -119,7 +91,7 @@ function putTestInDynamoDB(items, keyValue) {
 
 // DETAILED FUNCTION DESCRIPTION XD
 function updateItemInDynamoDB(tableName, partitionName, keyValue, updateExp, expAttNames, expAttValues) {
-    let params = {
+    var params = {
         TableName: tableName,
         Key: {
             [partitionName]: keyValue
@@ -171,8 +143,8 @@ function updateTestInDynamoDB(keyValue, keyName, valueObject) {
 // Returns a List based on the Scan
 // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#scan-property
 // https://stackoverflow.com/questions/44589967/how-to-fetch-scan-all-items-from-aws-dynamodb-using-node-js
-// DETAILED FUNCTION DESCRIPTION XD
-function scanTableInDynamoDB(tableName, getAttributes=[], attributeName=null, attributeValue=null) {
+// Returns empty array [] if key item does NOT EXIST
+function scanTableLoopInDynamoDB(tableName, getAttributes=[], attributeName=null, attributeValue=null) {
     const params = {
         TableName: tableName
     };

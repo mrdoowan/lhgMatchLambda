@@ -8,14 +8,14 @@
 /*  Declaring npm modules */
 const Hashids = require('hashids/cjs'); // For hashing and unhashing
 const { Kayn, REGIONS, BasicJSCache } = require('kayn'); // Riot API Wrapper
+require('dotenv').config();
 
 /* 
     Import from other files that are not committed to Github
     Contact doowan about getting a copy of these files
 */
 //const inputObjects = require('./external/singularTest');
-const inputObjects = require('./external/matchIdList');
-const envVars = require('./external/env');
+const inputObjects = require('./external/matchIdList1');
 
 /*  Import helper function modules */
 const GLOBAL = require('./globals');
@@ -23,10 +23,10 @@ const dynamoDb = require('./dynamoDbHelper');
 const mySql = require('./mySqlHelper');
 
 /*  Configurations of npm modules */
-const profileHashIds = new Hashids(envVars.PROFILE_HID_SALT, envVars.HID_LENGTH); // process.env.PROFILE_HID_SALT, process.env.HID_LENGTH
-const teamHashIds = new Hashids(envVars.TEAM_HID_SALT, envVars.HID_LENGTH); // process.env.TEAM_HID_SALT,
+const profileHashIds = new Hashids(process.env.PROFILE_HID_SALT, parseInt(process.env.HID_LENGTH));
+const teamHashIds = new Hashids(process.env.TEAM_HID_SALT, parseInt(process.env.HID_LENGTH));
 const kaynCache = new BasicJSCache();
-const kayn = Kayn(envVars.RIOT_API_KEY)({ // process.env.RIOT_API_KEY
+const kayn = Kayn(process.env.RIOT_API_KEY)({
     region: REGIONS.NORTH_AMERICA,
     apiURLPrefix: 'https://%s.api.riotgames.com',
     locale: 'en_US',
@@ -54,12 +54,24 @@ const kayn = Kayn(envVars.RIOT_API_KEY)({ // process.env.RIOT_API_KEY
     },
 });
 
-/*  Main AWS Lambda Function. We'll come back to this later */
-exports.handler = async (event, context) => {
-    
-    if ('manual' in event) {
-        
+/*
+    Input will have the following template:
+    {
+        gameId: 
+        players: [
+            {
+                profilePId: 'PROFILE_PID',
+                championId: CHAMP_ID,
+                role: 'TOP'
+            },
+        ],
+        blueTeamPId: ,
+        redTeamPId: ,
+        seasonPId: ,
+        tournamentPId: ,
     }
+*/
+exports.handler = async (event) => {
     
 };
 
@@ -68,11 +80,11 @@ async function main() {
         for (let i = 0; i < inputObjects.length; ++i) {
             let inputObject = inputObjects[i];
             // Check if MatchPId is already in DynamoDB
-            if (!(await dynamoDb.doesItemExist("Matches", "MatchPId", inputObject['gameId'].toString()))) {
+            if (!(await dynamoDb.getItem("Matches", "MatchPId", inputObject['gameId'].toString()))) {
                 console.log("Processing new match ID: " + inputObject['gameId']);
                 let matchRiotObject = await kayn.Match.get(inputObject['gameId']);
                 let timelineRiotObject = await kayn.Match.timeline(inputObject['gameId']);
-                if (!(matchRiotObject === undefined || matchRiotObject === null || timelineRiotObject === undefined || timelineRiotObject === null)) {
+                if (!(matchRiotObject == null || timelineRiotObject == null)) {
                     let lhgMatchObject = await promiseLhgMatchObject(inputObject, matchRiotObject, timelineRiotObject);
                     await putMatchDataInDBs(lhgMatchObject, inputObject);
                 }
@@ -811,11 +823,13 @@ function getDDragonVersion(patch) {
     return new Promise(async function(resolve, reject) {
         try {
             const DDragonVersionList = await kayn.DDragon.Version.list();
-            DDragonVersionList.forEach(function(DDragonVersion) {
+            for (let i = 0; i < DDragonVersionList.length; ++i) {
+                let DDragonVersion = DDragonVersionList[i];
                 if (DDragonVersion.includes(patch)) {
-                    resolve(DDragonVersion);     
+                    resolve(DDragonVersion); 
+                    return;    
                 }
-            });
+            }
             resolve(DDragonVersionList[0]); // Just return latest as default
         }
         catch (err) {
@@ -839,7 +853,7 @@ function strPadZeroes(num, size) {
 
 // Sub function to make it easier to get PId string
 function getPIdString(hashIdType, HId) {
-    return strPadZeroes(hashIdType.decode(HId)[0], envVars.PID_LENGTH); // process.env.PID_LENGTH
+    return strPadZeroes(hashIdType.decode(HId)[0], parseInt(process.env.PID_LENGTH));
 }
 
 function updateBaronDuration(thisPatch) {

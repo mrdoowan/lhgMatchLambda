@@ -12,17 +12,17 @@ const clonedeep = require('lodash.clonedeep'); // for deep cloning
 const GLOBAL = require('./globals');
 const dynamoDb = require('./dynamoDbHelper');
 const mySql = require('./mySqlHelper');
+require('dotenv').config();
 
 /* 
     Import from other files that are not committed to Github
     Contact doowan about getting a copy of these files
 */
 const inputObjects = require('./external/tournamentTest');
-const envVars = require('./external/env');
 
 /*  Configurations of npm modules */
-const profileHashIds = new Hashids(envVars.PROFILE_HID_SALT, envVars.HID_LENGTH); // process.env.PROFILE_HID_SALT
-const teamHashIds = new Hashids(envVars.TEAM_HID_SALT, envVars.HID_LENGTH); // process.env.TEAM_HID_SALT
+const profileHashIds = new Hashids(process.env.PROFILE_HID_SALT, parseInt(process.env.HID_LENGTH));
+const teamHashIds = new Hashids(process.env.TEAM_HID_SALT, parseInt(process.env.HID_LENGTH));
 
 /*  Main AWS Lambda Function. We'll come back to this later */
 exports.handler = async (event, context) => {
