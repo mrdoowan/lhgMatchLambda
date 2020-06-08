@@ -6,7 +6,6 @@
 */
 
 /*  Declaring npm modules */
-const Hashids = require('hashids/cjs'); // For hashing and unhashing
 const { Kayn, REGIONS, BasicJSCache } = require('kayn'); // Riot API Wrapper
 require('dotenv').config();
 
@@ -21,10 +20,9 @@ const inputObjects = require('./external/matchIdList1');
 const GLOBAL = require('./globals');
 const dynamoDb = require('./dynamoDbHelper');
 const mySql = require('./mySqlHelper');
+const helper = require('./helper');
 
 /*  Configurations of npm modules */
-const profileHashIds = new Hashids(process.env.PROFILE_HID_SALT, parseInt(process.env.HID_LENGTH));
-const teamHashIds = new Hashids(process.env.TEAM_HID_SALT, parseInt(process.env.HID_LENGTH));
 const kaynCache = new BasicJSCache();
 const kayn = Kayn(process.env.RIOT_API_KEY)({
     region: REGIONS.NORTH_AMERICA,
@@ -56,6 +54,24 @@ const kayn = Kayn(process.env.RIOT_API_KEY)({
 
 /*
     Input will take the Match 'Setup' Object in DynamoDB:
+    {
+        RiotMatchId: 'MATCH_ID', // string
+        BlueTeam: {
+            TeamPId: 0,
+            Players: [
+                {
+                    ProfilePId: '',
+                    ChampId: '',
+                    Role: '',
+                }
+            ]
+        },
+        RedTeam: {
+            // Same as above
+        }
+        SeasonPId: 0,
+        TournamentPId: 0,
+    }
 */
 exports.handler = async (event) => {
     
@@ -66,10 +82,10 @@ async function main() {
         for (let i = 0; i < inputObjects.length; ++i) {
             let inputObject = inputObjects[i];
             // Check if MatchPId is already in DynamoDB
-            if (!(await dynamoDb.getItem("Matches", "MatchPId", inputObject['gameId'].toString()))) {
-                console.log("Processing new match ID: " + inputObject['gameId']);
-                let matchRiotObject = await kayn.Match.get(inputObject['gameId']);
-                let timelineRiotObject = await kayn.Match.timeline(inputObject['gameId']);
+            if (!(await dynamoDb.getItem("Matches", "MatchPId", inputObject.RiotMatchId))) {
+                console.log(`Processing new match ID: ${inputObject.RiotMatchId}`);
+                let matchRiotObject = await kayn.Match.get(parseInt(inputObject.RiotMatchId));
+                let timelineRiotObject = await kayn.Match.timeline(parseInt(inputObject.RiotMatchId));
                 if (!(matchRiotObject == null || timelineRiotObject == null)) {
                     let lhgMatchObject = await promiseLhgMatchObject(inputObject, matchRiotObject, timelineRiotObject);
                     await putMatchDataInDBs(lhgMatchObject, inputObject);
@@ -92,7 +108,7 @@ function putMatchDataInDBs(lhgMatchObject, inputObject) {
     return new Promise(async function(resolve, reject) {
         try {
             await insertMatchObjectMySql(lhgMatchObject, inputObject);
-            console.log("MySQL: All data from \'" + lhgMatchObject.MatchPId + "\' inserted.");
+            console.log(`MySQL: All data from '${lhgMatchObject.MatchPId}' inserted.`);
             await dynamoDb.putItem('Matches', lhgMatchObject, lhgMatchObject.MatchPId);
             resolve(0);
         }
@@ -127,22 +143,29 @@ function promiseLhgMatchObject(eventInputObject, matchRiotObject, timelineRiotOb
 async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineRiotObject) {
     try {
         // ----- 1) Add onto matchObj of profileHId
-        profileObjByChampId = {}
-        playerArr = eventInputObject['players']; // Array
-        for (let i = 0; i < playerArr.length; i++) {
-            player = playerArr[i];
+        let profileObjByChampId = {}
+        let bluePlayerArr = eventInputObject.BlueTeam.Players; // Array
+        for (let i = 0; i < bluePlayerArr.length; i++) {
+            player = bluePlayerArr[i];
             profileObjByChampId[player.championId] = {
-                name: player.profileName,
-                role: player.role
+                'PId': player.ProfilePId,
+                'Role': player.Role,
+            };
+        }
+        let redPlayerArr = eventInputObject.RedTeam.Players; // Array
+        for (let i = 0; i < redPlayerArr.length; i++) {
+            player = redPlayerArr[i];
+            profileObjByChampId[player.championId] = {
+                'PId': player.ProfilePId,
+                'Role': player.Role,
             };
         }
 
         // ----- 2) Create the Match item for DynamoDB
         matchObject = {};
-        matchObject['MatchPId'] = eventInputObject.gameId.toString();
-        matchObject['RiotMatchId'] = eventInputObject.gameId.toString();
-        matchObject['SeasonPId'] = eventInputObject.seasonPId;
-        matchObject['TournamentPId'] = eventInputObject.tournamentPId;
+        matchObject['MatchPId'] = eventInputObject.RiotMatchId;
+        matchObject['SeasonPId'] = eventInputObject.SeasonPId;
+        matchObject['TournamentPId'] = eventInputObject.TournamentPId;
         matchObject['DatePlayed'] = matchRiotObject.gameCreation;
         matchObject['GameDuration'] = matchRiotObject.gameDuration;
         let patch = getPatch(matchRiotObject.gameVersion);
@@ -214,11 +237,10 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                     let partId = participantRiotObject.participantId;
                     teamIdByPartId[partId] = teamId;
                     let pStatsRiotObject = participantRiotObject.stats;
-                    let profileName = profileObjByChampId[participantRiotObject.championId].name;
-                    //console.log(profileName);
-                    playerData['ProfileHId'] = (await dynamoDb.getItem('ProfileNameMap', 'ProfileName', filterName(profileName)))['ProfileHId'];
+                    let profilePId = profileObjByChampId[participantRiotObject.championId]['PId'];
+                    playerData['ProfileHId'] = helper.getProfileHId(profilePId);
                     playerData['ParticipantId'] = partId;
-                    let champRole = profileObjByChampId[participantRiotObject.championId].role;
+                    let champRole = profileObjByChampId[participantRiotObject.championId]['Role'];
                     playerData['Role'] = champRole;
                     partIdByTeamIdAndRole[teamId][champRole] = partId;
                     playerData['ChampLevel'] = pStatsRiotObject.champLevel;
@@ -622,15 +644,15 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
 async function insertMatchObjectMySql(matchObject, eventInputObject) {
     try {
         // 1) MatchStats
-        let blueTeamId = getPIdString(teamHashIds, matchObject['Teams'][GLOBAL.BLUE_ID]['TeamHId']);
-        let redTeamId = getPIdString(teamHashIds, matchObject['Teams'][GLOBAL.RED_ID]['TeamHId']);
+        let blueTeamPId = helper.getTeamPId(matchObject['Teams'][GLOBAL.BLUE_ID]['TeamHId']);
+        let redTeamPId = helper.getTeamPId(matchObject['Teams'][GLOBAL.RED_ID]['TeamHId']);
         let insertMatchStatsColumn = {
             'riotMatchId': eventInputObject.gameId,
             'seasonPId': eventInputObject.seasonPId,
             'tournamentPId': eventInputObject.tournamentPId,
             'tournamentType': (await dynamoDb.getItem('Tournament', 'TournamentPId', eventInputObject.tournamentPId))['TournamentType'],
-            'blueTeamPId': blueTeamId,
-            'redTeamPId': redTeamId,
+            'blueTeamPId': blueTeamPId,
+            'redTeamPId': redTeamPId,
             'duration': matchObject.GameDuration,
             'patch': matchObject.GamePatchVersion,
             'datePlayed': matchObject.DatePlayed
@@ -642,8 +664,8 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
             let teamSide = Object.keys(matchObject['Teams'])[i];
             let teamObject = matchObject['Teams'][teamSide];
             let durationByMinute = matchObject.GameDuration / 60;
-            let thisTeamPId = (teamSide == GLOBAL.BLUE_ID) ? blueTeamId : redTeamId;
-            let enemyTeamPId = (teamSide == GLOBAL.BLUE_ID) ? redTeamId : blueTeamId;
+            let thisTeamPId = (teamSide == GLOBAL.BLUE_ID) ? blueTeamPId : redTeamPId;
+            let enemyTeamPId = (teamSide == GLOBAL.BLUE_ID) ? redTeamPId : blueTeamPId;
             let insertTeamStatsColumn = {
                 'riotMatchId': eventInputObject.gameId,
                 'teamPId': thisTeamPId,
@@ -713,9 +735,9 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
             for (let j = 0; j < Object.values(teamObject['Players']).length; ++j) {
                 let playerObject = Object.values(teamObject['Players'])[j];
                 let insertPlayerStatsColumn = {
-                    'profilePId': getPIdString(profileHashIds, playerObject.ProfileHId),
+                    'profilePId': helper.getProfilePId(playerObject.ProfileHId),
                     'riotMatchId': eventInputObject.gameId,
-                    'teamPId': getPIdString(teamHashIds, teamObject.TeamHId),
+                    'teamPId': helper.getTeamPId(teamObject.TeamHId),
                     'side': GLOBAL.SIDE_STRING[teamSide],
                     'role': playerObject.Role,
                     'champId': playerObject.ChampId,
@@ -773,7 +795,7 @@ async function insertMatchObjectMySql(matchObject, eventInputObject) {
                     if (['Tower','Inhibitor','Dragon','Baron','Herald'].includes(eventObject.EventType)) {
                         let insertObjectivesColumn = {
                             'riotMatchId': eventInputObject.gameId,
-                            'teamPId': (eventObject.TeamId == GLOBAL.BLUE_ID) ? blueTeamId : redTeamId,
+                            'teamPId': (eventObject.TeamId == GLOBAL.BLUE_ID) ? blueTeamPId : redTeamPId,
                             'objectiveEvent': eventObject.EventType,
                             'timestamp': eventObject.Timestamp
                         };
