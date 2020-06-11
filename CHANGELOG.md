@@ -1,3 +1,6 @@
+# 0.9.0
+* match.js updated to conform to Client POST requests.
+
 # 0.8.0
 * overall.js finished completely. Still in prototype before productionize for DynamoDB.
 

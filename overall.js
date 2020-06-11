@@ -250,7 +250,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
             // Load each Stat into Profile in tournamentId
             let matchDataList = await mySql.callSProc('playerStatsByTournamentPId', profilePId, tournamentPId);
             let matchLoaded = false;
-            console.log("Profile \'" + profilePId + "\' played " + matchDataList.length + " matches.");
+            console.log(`"Profile '${profilePId}' played ${matchDataList.length} matches."`);
             for (let matchIdx = 0; matchIdx < matchDataList.length; ++matchIdx) {
                 let sqlPlayerStats = matchDataList[matchIdx];
                 let matchPId = sqlPlayerStats.riotMatchId;

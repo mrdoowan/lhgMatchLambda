@@ -4,22 +4,18 @@ module.exports = {
     callSProc: sProcMySqlQuery
 }
 
-/* 
-    Import from other files that are not committed to Github
-    Contact doowan about getting a copy of these files
-*/
-const envVars = require('./external/env');
-
 /*  Declaring MySQL npm modules */
 const mysql = require('mysql'); // Interfacing with mysql DB
+require('dotenv').config();
+
 /*  Configurations of npm modules */
 const sqlPool = mysql.createPool({
     connectionLimit: 10,
-    host: envVars.MYSQL_ENDPOINT,           //process.env.MYSQL_ENDPOINT
-    user: envVars.MYSQL_USER,               //process.env.MYSQL_USER
-    password: envVars.MYSQL_PASSWORD,       //process.env.MYSQL_PASSWORD
-    port: envVars.MYSQL_PORT,               //process.env.MYSQL_PORT
-    database: envVars.MYSQL_DATABASE_STATS  //process.env.MYSQL_DATABASE_STATS
+    host: process.env.MYSQL_ENDPOINT,           //process.env.MYSQL_ENDPOINT
+    user: process.env.MYSQL_USER,               //process.env.MYSQL_USER
+    password: process.env.MYSQL_PASSWORD,       //process.env.MYSQL_PASSWORD
+    port: process.env.MYSQL_PORT,               //process.env.MYSQL_PORT
+    database: process.env.MYSQL_DATABASE_STATS  //process.env.MYSQL_DATABASE_STATS
 });
 
 /*  Put 'false' to test without affecting the databases. */
