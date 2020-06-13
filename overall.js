@@ -25,7 +25,7 @@ const profileHashIds = new Hashids(process.env.PROFILE_HID_SALT, parseInt(proces
 const teamHashIds = new Hashids(process.env.TEAM_HID_SALT, parseInt(process.env.HID_LENGTH));
 
 /*  Main AWS Lambda Function. We'll come back to this later */
-exports.handler = async (event, context) => {
+exports.handler = async (event) => {
     
 };
 
@@ -34,13 +34,13 @@ async function main() {
         for (let i = 0; i < inputObjects.length; ++i) {
             let tournamentId = inputObjects[i];
             let tourneyDbObject = await dynamoDb.getItem('Tournament', 'TournamentPId', tournamentId);
-            if (!(tourneyDbObject == undefined || tourneyDbObject == null)) {
+            if (tourneyDbObject != null) {
                 await updateProfileItemDynamoDb(tourneyDbObject);
                 await updateTeamItemDynamoDb(tourneyDbObject);
                 await updateTournamentItemDynamoDb(tourneyDbObject);
             }
             else {
-                console.error("TournamentPId '" + tournamentId + "' doesn't exist in DynamoDB!");
+                console.error(`TournamentPId '${tournamentId}' doesn't exist in DynamoDB!`);
             }
         }
     }
@@ -63,96 +63,11 @@ main();
 const initProfileSeasonGames = {
     'Matches': {}
 }
-const initProfileTourneyStats = {
-    'GamesPlayed': 0,
-    'GamesPlayedOverEarly': 0,
-    'GamesPlayedOverMid': 0,
-    'TotalGameDuration': 0,
-    'GamesWin': 0,
-    'TotalKills': 0,
-    'TotalDeaths': 0,
-    'TotalAssists': 0,
-    'TotalCreepScore': 0,
-    'TotalDamage': 0,
-    'TotalGold': 0,
-    'TotalVisionScore': 0,
-    'TotalCsAtEarly': 0,
-    'TotalGoldAtEarly': 0,
-    'TotalXpAtEarly': 0,
-    'TotalCsDiffEarly': 0,
-    'TotalGoldDiffEarly': 0,
-    'TotalXpDiffEarly': 0,
-    'TotalFirstBloods': 0,
-    'TotalTeamKills': 0,
-    'TotalTeamDeaths': 0,
-    'TotalTeamDamage': 0,
-    'TotalTeamGold': 0,
-    'TotalTeamVisionScore': 0,
-    'TotalWardsPlaced': 0,
-    'TotalControlWardsBought': 0,
-    'TotalWardsCleared': 0,
-    'TotalSoloKills': 0,
-    'TotalDoubleKills': 0,
-    'TotalTripleKills': 0,
-    'TotalQuadraKills': 0,
-    'TotalPentaKills': 0,
-};
+const initProfileTourneyStatsGames = {
+    'RoleStats': {}
+}
 const initTeamSeasonGames = {
     'Matches': {}
-};
-const initTeamSeasonScouting = {
-    'Ongoing': false,
-    'GamesPlayed': 0,
-    'GamesWin': 0,
-    'BannedByTeam': {},
-    'BannedAgainstTeam': {},
-    'PlayerLog': {}
-};
-const initTeamTourneyStats = {
-    'GamesPlayed': 0,
-    'GamesPlayedOverEarly': 0,
-    'GamesPlayedOverMid': 0,
-    'GamesWon': 0,
-    'GamesPlayedOnBlue': 0,
-    'BlueWins': 0,
-    'TotalGameDuration': 0,
-    'TotalXpDiffEarly': 0,
-    'TotalXpDiffMid': 0,
-    'TotalGold': 0,
-    'TotalGoldDiffEarly': 0,
-    'TotalGoldDiffMid': 0,
-    'TotalCreepScore': 0,
-    'TotalCsDiffEarly': 0,
-    'TotalCsDiffMid': 0,
-    'TotalDamageDealt': 0,
-    'TotalFirstBloods': 0,
-    'TotalFirstTowers': 0,
-    'TotalKills': 0,
-    'TotalDeaths': 0,
-    'TotalAssists': 0,
-    'TotalTowersTaken': 0,
-    'TotalTowersLost': 0,
-    'TotalDragonsTaken': 0,
-    'TotalEnemyDragons': 0,
-    'TotalHeraldsTaken': 0,
-    'TotalEnemyHeralds': 0,
-    'TotalBaronsTaken': 0,
-    'TotalEnemyBarons': 0,
-    'TotalVisionScore': 0,
-    'TotalWardsPlaced': 0,
-    'TotalControlWardsBought': 0,
-    'TotalWardsCleared': 0,
-    'TotalEnemyWardsPlaced': 0
-};
-const initTourneyStats = {
-    'NumberGames': 0,
-    'BlueSideWins': 0,
-    'TotalGameDuration': 0,
-    'CloudDrakes': 0,
-    'OceanDrakes': 0,
-    'InfernalDrakes': 0,
-    'MountainDrakes': 0,
-    'ElderDrakes': 0,
 };
 const initTourneyPickBans = {
     'BluePicks': 0,
@@ -190,7 +105,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
             // #region Init Items
             // Check 'GameLog' exists in ProfileDbObject
             // {MAIN}/profile/<profileName>/games/<seasonShortName>
-            const initProfileGameLog = { [seasonPId]: initProfileSeasonGames };
+            const initProfileGameLog = { [seasonPId]: clonedeep(initProfileSeasonGames) };
             // Check if 'GameLog' exists in Profile
             if (!('GameLog' in profileDbObject)) {
                 await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
@@ -220,7 +135,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
             }
             // Check if 'StatsLog' exists in Profile
             // {MAIN}/profile/<profileName>/stats/<seasonShortName>
-            const initStatsLog = { [tournamentPId]: { RoleStats: {} } };
+            const initStatsLog = { [tournamentPId]: clonedeep(initProfileTourneyStatsGames) };
             if (!('StatsLog' in profileDbObject)) {
                 await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
                     'SET #sLog = :val',
@@ -235,7 +150,17 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
             }
             // Check if that TournamentPId in StatsLog
             else if (!(tournamentPId in profileDbObject['StatsLog'])) {
-                profileDbObject['StatsLog'][tournamentPId] = {};
+                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
+                    'SET #sLog.#tId = :val',
+                    { 
+                        '#sLog': 'StatsLog',
+                        '#tId': tournamentPId,
+                    },
+                    { 
+                        ':val': initProfileTourneyStatsGames
+                    }
+                );
+                profileDbObject['StatsLog'][tournamentPId] = clonedeep(initProfileTourneyStatsGames);
             }
             //#endregion
             // Make shallow copies
@@ -248,55 +173,12 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                 -------------
             */
             // Load each Stat into Profile in tournamentId
-            let matchDataList = await mySql.callSProc('playerStatsByTournamentPId', profilePId, tournamentPId);
-            let matchLoaded = false;
-            console.log(`"Profile '${profilePId}' played ${matchDataList.length} matches."`);
+            let matchDataList = await mySql.callSProc('playerMatchesByTournamentPId', profilePId, tournamentPId);
+            console.log(`Profile '${profilePId}' played ${matchDataList.length} matches in TournamentPID '${tournamentPId}'.`);
             for (let matchIdx = 0; matchIdx < matchDataList.length; ++matchIdx) {
                 let sqlPlayerStats = matchDataList[matchIdx];
                 let matchPId = sqlPlayerStats.riotMatchId;
                 if (!(matchPId in gameLogProfileItem)) {
-                    /*  
-                        ----------
-                        'StatsLog'
-                        ----------
-                    */
-                    // Check if the Role they played exists
-                    let role = sqlPlayerStats.role;
-                    if (!(role in statsLogProfileItem)) {
-                        statsLogProfileItem[role] = clonedeep(initProfileTourneyStats);
-                    }
-                    statsLogProfileItem[role]['GamesPlayed']++;
-                    statsLogProfileItem[role]['GamesPlayedOverEarly'] += (sqlPlayerStats.duration >= GLOBAL.MINUTE_AT_EARLY * 60);
-                    statsLogProfileItem[role]['GamesPlayedOverMid'] += (sqlPlayerStats.duration >= GLOBAL.MINUTE_AT_MID * 60);
-                    statsLogProfileItem[role]['TotalGameDuration'] += sqlPlayerStats.duration;
-                    statsLogProfileItem[role]['GamesWin'] += sqlPlayerStats.win;
-                    statsLogProfileItem[role]['TotalKills'] += sqlPlayerStats.kills;
-                    statsLogProfileItem[role]['TotalDeaths'] += sqlPlayerStats.deaths;
-                    statsLogProfileItem[role]['TotalAssists'] += sqlPlayerStats.assists;
-                    statsLogProfileItem[role]['TotalCreepScore'] += sqlPlayerStats.creepScore;
-                    statsLogProfileItem[role]['TotalDamage'] += sqlPlayerStats.damageDealt;
-                    statsLogProfileItem[role]['TotalGold'] += sqlPlayerStats.gold;
-                    statsLogProfileItem[role]['TotalVisionScore'] += sqlPlayerStats.visionScore;
-                    statsLogProfileItem[role]['TotalCsAtEarly'] += sqlPlayerStats.csAtEarly;
-                    statsLogProfileItem[role]['TotalGoldAtEarly'] += sqlPlayerStats.goldAtEarly;
-                    statsLogProfileItem[role]['TotalXpAtEarly'] += sqlPlayerStats.xpAtEarly;
-                    statsLogProfileItem[role]['TotalCsDiffEarly'] += sqlPlayerStats.csDiffEarly;
-                    statsLogProfileItem[role]['TotalGoldDiffEarly'] += sqlPlayerStats.goldDiffEarly;
-                    statsLogProfileItem[role]['TotalXpDiffEarly'] += sqlPlayerStats.xpDiffEarly;
-                    statsLogProfileItem[role]['TotalFirstBloods'] += (sqlPlayerStats.firstBloodKill + sqlPlayerStats.firstBloodAssist);
-                    statsLogProfileItem[role]['TotalTeamKills'] += sqlPlayerStats.teamKills;
-                    statsLogProfileItem[role]['TotalTeamDeaths'] += sqlPlayerStats.teamDeaths;
-                    statsLogProfileItem[role]['TotalTeamDamage'] += sqlPlayerStats.teamDamage;
-                    statsLogProfileItem[role]['TotalTeamGold'] += sqlPlayerStats.teamGold;
-                    statsLogProfileItem[role]['TotalTeamVisionScore'] += sqlPlayerStats.teamVS;
-                    statsLogProfileItem[role]['TotalWardsPlaced'] += sqlPlayerStats.wardsPlaced;
-                    statsLogProfileItem[role]['TotalControlWardsBought'] += sqlPlayerStats.controlWardsBought;
-                    statsLogProfileItem[role]['TotalWardsCleared'] += sqlPlayerStats.wardsCleared;
-                    statsLogProfileItem[role]['TotalSoloKills'] += sqlPlayerStats.soloKills;
-                    statsLogProfileItem[role]['TotalDoubleKills'] += sqlPlayerStats.doubleKills;
-                    statsLogProfileItem[role]['TotalTripleKills'] += sqlPlayerStats.tripleKills;
-                    statsLogProfileItem[role]['TotalQuadraKills'] += sqlPlayerStats.quadraKills;
-                    statsLogProfileItem[role]['TotalPentaKills'] += sqlPlayerStats.pentaKills;
                     /*  
                         ----------
                         'GameLog'
@@ -308,7 +190,7 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                         'GameWeekNumber': 0, // N/A
                         'TeamHId': teamHashIds.encode(sqlPlayerStats.teamPId),
                         'ChampionPlayed': sqlPlayerStats.champId,
-                        'Role': role,
+                        'Role': sqlPlayerStats.role,
                         'Win': (sqlPlayerStats.win == 1) ? true : false,
                         'Vacated': false,
                         'EnemyTeamHId': teamHashIds.encode((sqlPlayerStats.side === 'Blue') ? sqlPlayerStats.redTeamPId : sqlPlayerStats.blueTeamPId),
@@ -325,32 +207,79 @@ async function updateProfileItemDynamoDb(tourneyDbObject) {
                         'TeamVS': sqlPlayerStats.teamVS,
                     };
                     gameLogProfileItem[matchPId] = profileGameItem;
-                    matchLoaded = true;
                 }
             }
-            if (matchLoaded) {
-                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId, 
-                    'SET #slog.#tId = :data',
-                    {
-                        '#slog': 'StatsLog',
-                        '#tId': tournamentPId
-                    },
-                    {
-                        ':data': statsLogProfileItem
-                    }
-                );
-                await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
-                    'SET #log.#sId.#mtch = :data',
-                    {
-                        '#log': 'GameLog',
-                        '#sId': seasonPId,
-                        '#mtch': 'Matches'
-                    },
-                    {
-                        ':data': gameLogProfileItem
-                    }
-                );
+            /*  
+                ----------
+                'StatsLog'
+                ----------
+            */
+            let playerStatsTotalData = await mySql.callSProc('playerStatsTotalByTournamentId', profilePId, tournamentPId, GLOBAL.MINUTE_AT_EARLY, GLOBAL.MINUTE_AT_MID);
+            for (let idx = 0; idx < playerStatsTotalData.length; ++idx) {
+                let playerStatsTotalRow = playerStatsTotalData[idx];
+                let role = playerStatsTotalRow.playerRole;
+                // Initialize StatsLog Role 
+                if (!(role in statsLogProfileItem)) {
+                    statsLogProfileItem[role] = {};
+                }
+                // Get from sProc
+                let statsRoleItem = statsLogProfileItem[role];
+                statsRoleItem['GamesPlayed'] = playerStatsTotalRow.gamesPlayed;
+                statsRoleItem['GamesPlayedOverEarly'] = playerStatsTotalRow.gamesPlayedOverEarly;
+                statsRoleItem['GamesPlayedOverMid'] = playerStatsTotalRow.gamesPlayedOverMid;
+                statsRoleItem['TotalGameDuration'] = playerStatsTotalRow.totalDuration;
+                statsRoleItem['GamesWin'] = playerStatsTotalRow.totalWins;
+                statsRoleItem['TotalKills'] = playerStatsTotalRow.totalKills;
+                statsRoleItem['TotalDeaths'] = playerStatsTotalRow.totalDeaths;
+                statsRoleItem['TotalAssists'] = playerStatsTotalRow.totalAssists;
+                statsRoleItem['TotalCreepScore'] = playerStatsTotalRow.totalCreepScore;
+                statsRoleItem['TotalDamage'] = playerStatsTotalRow.totalDamage;
+                statsRoleItem['TotalGold'] = playerStatsTotalRow.totalGold;
+                statsRoleItem['TotalVisionScore'] = playerStatsTotalRow.totalVisionScore;
+                statsRoleItem['TotalCsAtEarly'] = playerStatsTotalRow.totalCsAtEarly;
+                statsRoleItem['TotalGoldAtEarly'] = playerStatsTotalRow.totalGoldAtEarly;
+                statsRoleItem['TotalXpAtEarly'] = playerStatsTotalRow.totalXpAtEarly;
+                statsRoleItem['TotalCsDiffEarly'] = playerStatsTotalRow.totalCsDiffEarly;
+                statsRoleItem['TotalGoldDiffEarly'] = playerStatsTotalRow.totalGoldDiffEarly;
+                statsRoleItem['TotalXpDiffEarly'] = playerStatsTotalRow.totalXpDiffEarly;
+                statsRoleItem['TotalFirstBloods'] = playerStatsTotalRow.totalFirstBloods;
+                statsRoleItem['TotalTeamKills'] = playerStatsTotalRow.totalTeamKills;
+                statsRoleItem['TotalTeamDeaths'] = playerStatsTotalRow.totalTeamDeaths;
+                statsRoleItem['TotalTeamDamage'] = playerStatsTotalRow.totalTeamDamage;
+                statsRoleItem['TotalTeamGold'] = playerStatsTotalRow.totalTeamGold;
+                statsRoleItem['TotalTeamVisionScore'] = playerStatsTotalRow.totalTeamVisionScore;
+                statsRoleItem['TotalWardsPlaced'] = playerStatsTotalRow.totalWardsPlaced;
+                statsRoleItem['TotalControlWardsBought'] = playerStatsTotalRow.totalControlWardsBought;
+                statsRoleItem['TotalWardsCleared'] = playerStatsTotalRow.totalWardsCleared;
+                statsRoleItem['TotalSoloKills'] = playerStatsTotalRow.totalSoloKills;
+                statsRoleItem['TotalDoubleKills'] = playerStatsTotalRow.totalDoubleKills;
+                statsRoleItem['TotalTripleKills'] = playerStatsTotalRow.totalTripleKills;
+                statsRoleItem['TotalQuadraKills'] = playerStatsTotalRow.totalQuadraKills;
+                statsRoleItem['TotalPentaKills'] = playerStatsTotalRow.totalPentaKills;
             }
+            // Push into DynamoDb
+            await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId, 
+                'SET #slog.#tId.#rStats = :data',
+                {
+                    '#slog': 'StatsLog',
+                    '#tId': tournamentPId,
+                    '#rStats': 'RoleStats',
+                },
+                {
+                    ':data': statsLogProfileItem
+                }
+            );
+            await dynamoDb.updateItem('Profile', 'ProfilePId', profilePId,
+                'SET #log.#sId.#mtch = :data',
+                {
+                    '#log': 'GameLog',
+                    '#sId': seasonPId,
+                    '#mtch': 'Matches',
+                },
+                {
+                    ':data': gameLogProfileItem
+                }
+            );
         }
     }
     catch (error) {
@@ -403,7 +332,7 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
             }
             // Check 'Scouting' exists in TeamItem 
             // {MAIN}/team/<teamName>/scouting/<seasonShortName>
-            const initTeamScouting = { [seasonPId]: initTeamSeasonScouting };
+            const initTeamScouting = { [seasonPId]: {} };
             if (!('Scouting' in teamDbObject)) {
                 await dynamoDb.updateItem('Team', 'TeamPId', teamPId, 
                     'SET #sct = :val',
@@ -417,11 +346,11 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                 teamDbObject['Scouting'] = clonedeep(initTeamScouting);
             }
             else if (!(seasonPId in teamDbObject['Scouting'])) {
-                teamDbObject['Scouting'][seasonPId] = clonedeep(initTeamSeasonScouting);
+                teamDbObject['Scouting'][seasonPId] = {};
             }
             // Check 'StatsLog' exists in TeamItem
             // {MAIN}/team/<teamName>/stats/<tournamentShortName>
-            const initTeamStatsLog = { [tournamentPId]: initTeamTourneyStats };
+            const initTeamStatsLog = { [tournamentPId]: {} };
             if (!('StatsLog' in teamDbObject)) {
                 await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
                     'SET #sLog = :val',
@@ -436,155 +365,48 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
             }
             // Check if that tournamentId in StatsLog
             else if (!(tournamentPId in teamDbObject['StatsLog'])) {
-                teamDbObject['StatsLog'][tournamentPId] = clonedeep(initTeamTourneyStats);
+                teamDbObject['StatsLog'][tournamentPId] = {};
             }
             //#endregion
             // Make shallow copies
-            let tourneyTeamStatsItem = teamDbObject['StatsLog'][tournamentPId];
             let scoutingItem = teamDbObject['Scouting'][seasonPId];
             let gameLogTeamItem = teamDbObject['GameLog'][seasonPId]['Matches'];
+            let tourneyTeamStatsItem = teamDbObject['StatsLog'][tournamentPId];
 
             /*  
                 -------------
                 Compile Data
                 -------------
             */
-            // Loop through all the TeamStats in tournamentId
-            let teamStatsSqlListTourney = await mySql.callSProc('teamStatsByTeamIdTournamentPId', teamPId, tournamentPId);
-            let matchLoaded = false;
-            for (let matchIdx = 0; matchIdx < teamStatsSqlListTourney.length; ++matchIdx) {
-                let sqlTeamStats = teamStatsSqlListTourney[matchIdx];
-                let matchPId = sqlTeamStats.riotMatchId;
+            // Loop through all the TeamStats Sql Rows in tournamentId
+            let teamMatchesSqlListTourney = await mySql.callSProc('teamMatchesByTournamentPId', teamPId, tournamentPId);
+            for (let matchIdx = 0; matchIdx < teamMatchesSqlListTourney.length; ++matchIdx) {
+                let sqlTeamMatch = teamMatchesSqlListTourney[matchIdx];
+                let matchPId = sqlTeamMatch.riotMatchId;
                 if (!(matchPId in gameLogTeamItem)) {
                     // Additional sProcs from MySQL
-                    let playerStatsSqlList = await mySql.callSProc('playerStatsByMatchIdTeamId', sqlTeamStats.riotMatchId, teamPId);
-                    let bannedChampSqlList = await mySql.callSProc('bannedChampsByMatchId', matchPId);
-                    /*  
-                        -------------
-                        'StatsLog'
-                        -------------
-                    */
-                    tourneyTeamStatsItem['GamesPlayed']++;
-                    tourneyTeamStatsItem['GamesPlayedOverEarly'] += (sqlTeamStats.duration >= GLOBAL.MINUTE_AT_EARLY * 60);
-                    tourneyTeamStatsItem['GamesPlayedOverMid'] += (sqlTeamStats.duration >= GLOBAL.MINUTE_AT_MID * 60);
-                    tourneyTeamStatsItem['GamesWon'] += sqlTeamStats.win;
-                    tourneyTeamStatsItem['GamesPlayedOnBlue'] += (sqlTeamStats.side === 'Blue');
-                    tourneyTeamStatsItem['BlueWins'] += (sqlTeamStats.win && (sqlTeamStats.side === 'Blue'));
-                    tourneyTeamStatsItem['TotalGameDuration'] += sqlTeamStats.duration;
-                    tourneyTeamStatsItem['TotalXpDiffEarly'] += sqlTeamStats.xpDiffEarly;
-                    tourneyTeamStatsItem['TotalXpDiffMid'] += sqlTeamStats.xpDiffMid;
-                    tourneyTeamStatsItem['TotalGold'] += sqlTeamStats.totalGold;
-                    tourneyTeamStatsItem['TotalGoldDiffEarly'] += sqlTeamStats.goldDiffEarly;
-                    tourneyTeamStatsItem['TotalGoldDiffMid'] += sqlTeamStats.goldDiffMid;
-                    tourneyTeamStatsItem['TotalCreepScore'] += sqlTeamStats.totalCreepScore;
-                    tourneyTeamStatsItem['TotalCsDiffEarly'] += sqlTeamStats.csDiffEarly;
-                    tourneyTeamStatsItem['TotalCsDiffMid'] += sqlTeamStats.csDiffMid;
-                    tourneyTeamStatsItem['TotalDamageDealt'] += sqlTeamStats.totalDamageDealt;
-                    tourneyTeamStatsItem['TotalFirstBloods'] += sqlTeamStats.firstBlood;
-                    tourneyTeamStatsItem['TotalFirstTowers'] += sqlTeamStats.firstTower;
-                    tourneyTeamStatsItem['TotalKills'] += sqlTeamStats.totalKills;
-                    tourneyTeamStatsItem['TotalDeaths'] += sqlTeamStats.totalDeaths;
-                    tourneyTeamStatsItem['TotalAssists'] += sqlTeamStats.totalAssists;
-                    tourneyTeamStatsItem['TotalTowersTaken'] += sqlTeamStats.totalTowers;
-                    tourneyTeamStatsItem['TotalTowersLost'] += sqlTeamStats.oppTowers;
-                    tourneyTeamStatsItem['TotalDragonsTaken'] += sqlTeamStats.totalDragons;
-                    tourneyTeamStatsItem['TotalEnemyDragons'] += sqlTeamStats.oppDragons;
-                    tourneyTeamStatsItem['TotalHeraldsTaken'] += sqlTeamStats.totalHeralds;
-                    tourneyTeamStatsItem['TotalEnemyHeralds'] += sqlTeamStats.oppHeralds;
-                    tourneyTeamStatsItem['TotalBaronsTaken'] += sqlTeamStats.totalBarons;
-                    tourneyTeamStatsItem['TotalEnemyBarons'] += sqlTeamStats.oppBarons;
-                    tourneyTeamStatsItem['TotalVisionScore'] += sqlTeamStats.totalVisionScore;
-                    tourneyTeamStatsItem['TotalWardsPlaced'] += sqlTeamStats.totalWardsPlaced;
-                    tourneyTeamStatsItem['TotalControlWardsBought'] += sqlTeamStats.totalControlWardsBought;
-                    tourneyTeamStatsItem['TotalWardsCleared'] += sqlTeamStats.totalWardsCleared;
-                    tourneyTeamStatsItem['TotalEnemyWardsPlaced'] += sqlTeamStats.oppWardsPlaced;
-                    /*  
-                        -------------
-                        'Scouting'
-                        -------------
-                    */
-                    scoutingItem['GamesPlayed']++;
-                    scoutingItem['GamesWin'] += sqlTeamStats.win;
-                    for (let champIdx = 0; champIdx < bannedChampSqlList.length; ++champIdx) {
-                        let champSqlRow = bannedChampSqlList[champIdx];
-                        if (champSqlRow.teamBannedById == teamPId) { 
-                            if (!(champSqlRow.champId in scoutingItem['BannedByTeam'])) {
-                                scoutingItem['BannedByTeam'][champSqlRow.champId] = 0;
-                            }
-                            scoutingItem['BannedByTeam'][champSqlRow.champId]++;
-                        }
-                        else {
-                            if (!(champSqlRow.champId in scoutingItem['BannedAgainstTeam'])) {
-                                scoutingItem['BannedAgainstTeam'][champSqlRow.champId] = 0;
-                            }
-                            scoutingItem['BannedAgainstTeam'][champSqlRow.champId]++;
-                        }
-                    }
-                    let playerLog = scoutingItem['PlayerLog'];
-                    for (let playerIdx = 0; playerIdx < playerStatsSqlList.length; ++playerIdx) {
-                        let playerSqlRow = playerStatsSqlList[playerIdx];
-                        let role = playerSqlRow.role;
-                        if (!(role in playerLog)) {
-                            playerLog[role] = {};
-                        }
-                        let profileHId = profileHashIds.encode(playerSqlRow.profilePId);
-                        if (!(profileHId in playerLog[role])) {
-                            // New entry
-                            playerLog[role][profileHId] = {
-                                'GamesPlayed': 0,
-                                'TotalKillsPlayer': 0,
-                                'TotalDeathsPlayer': 0,
-                                'TotalAssistsPlayer': 0,
-                                'TotalDamagePlayer': 0,
-                                'TotalGoldPlayer': 0,
-                                'TotalVsPlayer': 0,
-                                'TotalKillsTeam': 0,
-                                'TotalDamageTeam': 0,
-                                'TotalGoldTeam': 0,
-                                'TotalVsTeam': 0,
-                                'ChampsPlayed': {}
-                            };
-                        }
-                        let thisPlayer = playerLog[role][profileHId]; // Shallow copy
-                        thisPlayer['GamesPlayed']++;
-                        thisPlayer['TotalKillsPlayer'] += playerSqlRow.kills;
-                        thisPlayer['TotalDeathsPlayer'] += playerSqlRow.deaths;
-                        thisPlayer['TotalAssistsPlayer'] += playerSqlRow.assists;
-                        thisPlayer['TotalDamagePlayer'] += playerSqlRow.damageDealt;
-                        thisPlayer['TotalGoldPlayer'] += playerSqlRow.gold;
-                        thisPlayer['TotalVsPlayer'] += playerSqlRow.visionScore;
-                        thisPlayer['TotalKillsTeam'] += sqlTeamStats.totalKills;
-                        thisPlayer['TotalDamageTeam'] += sqlTeamStats.totalDamageDealt;
-                        thisPlayer['TotalGoldTeam'] += sqlTeamStats.totalGold;
-                        thisPlayer['TotalVsTeam'] += sqlTeamStats.totalVisionScore;
-                        if (!(playerSqlRow.champId in thisPlayer['ChampsPlayed'])) {
-                            thisPlayer['ChampsPlayed'][playerSqlRow.champId] = {};
-                            thisPlayer['ChampsPlayed'][playerSqlRow.champId]['GamesPlayed'] = 0;
-                            thisPlayer['ChampsPlayed'][playerSqlRow.champId]['GamesWon'] = 0;
-                        }
-                        thisPlayer['ChampsPlayed'][playerSqlRow.champId]['GamesPlayed']++;
-                        thisPlayer['ChampsPlayed'][playerSqlRow.champId]['GamesWon'] += playerSqlRow.win;
-                    }
+                    let playerStatsSqlList = await mySql.callSProc('playerStatsByMatchIdTeamId', matchPId, teamPId);
+                    let bannedChampMatchSqlList = await mySql.callSProc('bannedChampsByMatchId', matchPId);
                     /*  
                         -------------
                         'GameLog'
                         -------------
                     */
                     let teamGameItem = {
-                        'DatePlayed': sqlTeamStats.datePlayed,
-                        'TournamentType': sqlTeamStats.tournamentType,
+                        'DatePlayed': sqlTeamMatch.datePlayed,
+                        'TournamentType': sqlTeamMatch.tournamentType,
                         'GameWeekNumber': 0, // N/A
                         'ChampPicks': {},
-                        'Win': (sqlTeamStats.win == 1) ? true : false,
+                        'Win': (sqlTeamMatch.win == 1) ? true : false,
                         'Vacated': false,
-                        'EnemyTeamHId': teamHashIds.encode((sqlTeamStats.side === 'Blue') ? sqlTeamStats.redTeamPId : sqlTeamStats.blueTeamPId),
-                        'GameDuration': sqlTeamStats.duration,
-                        'Kills': sqlTeamStats.totalKills,
-                        'Deaths': sqlTeamStats.totalDeaths,
-                        'Assists': sqlTeamStats.totalAssists,
-                        'GoldPerMinute': sqlTeamStats.goldPerMin,
-                        'GoldDiffEarly': sqlTeamStats.goldDiffEarly,
-                        'GoldDiffMid': sqlTeamStats.goldDiffMid,
+                        'EnemyTeamHId': teamHashIds.encode((sqlTeamMatch.side === 'Blue') ? sqlTeamMatch.redTeamPId : sqlTeamMatch.blueTeamPId),
+                        'GameDuration': sqlTeamMatch.duration,
+                        'Kills': sqlTeamMatch.totalKills,
+                        'Deaths': sqlTeamMatch.totalDeaths,
+                        'Assists': sqlTeamMatch.totalAssists,
+                        'GoldPerMinute': sqlTeamMatch.goldPerMin,
+                        'GoldDiffEarly': sqlTeamMatch.goldDiffEarly,
+                        'GoldDiffMid': sqlTeamMatch.goldDiffMid,
                         'BannedByTeam': [],
                         'BannedAgainst': []
                     };
@@ -596,8 +418,8 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         };
                     }
                     for (let phase = 1; phase <= 2; ++phase) {
-                        for (let k = 0; k < bannedChampSqlList.length; ++k) {
-                            let champSqlRow = bannedChampSqlList[k];
+                        for (let k = 0; k < bannedChampMatchSqlList.length; ++k) {
+                            let champSqlRow = bannedChampMatchSqlList[k];
                             if (champSqlRow.phase == phase) {
                                 if (champSqlRow.teamBannedById == teamPId) { teamGameItem['BannedByTeam'].push(champSqlRow.champId); }
                                 else { teamGameItem['BannedAgainst'].push(champSqlRow.champId); }
@@ -605,42 +427,160 @@ async function updateTeamItemDynamoDb(tourneyDbObject) {
                         }
                     }
                     gameLogTeamItem[matchPId] = teamGameItem;
-                    matchLoaded = true;
                 }
             }
-            if (matchLoaded) {
-                await dynamoDb.updateItem('Team', 'TeamPId', teamPId, 
-                    'SET #sct.#sId = :val',
-                    {
-                        '#sct': 'Scouting',
-                        '#sId': seasonPId
-                    },
-                    {
-                        ':val': scoutingItem
+            /*  
+                -------------
+                'Scouting' (Season Id dependent)
+                -------------
+            */
+            // Banned Champs List
+            const sqlTeamSeasonStats = (await mySql.callSProc('teamStatsBySeasonId', teamPId, seasonPId))[0];
+            scoutingItem['Ongoing'] = false;
+            scoutingItem['GamesPlayed'] = sqlTeamSeasonStats.gamesPlayed;
+            scoutingItem['GamesWin'] = sqlTeamSeasonStats.gamesWin;
+            scoutingItem['BannedByTeam'] = {};
+            scoutingItem['BannedAgainstTeam'] = {};
+            const bannedChampsSeasonSqlList = await mySql.callSProc('bannedChampsByTeamIdSeasonId', teamPId, seasonPId);
+            for (let champIdx = 0; champIdx < bannedChampsSeasonSqlList.length; ++champIdx) {
+                const champSqlRow = bannedChampsSeasonSqlList[champIdx];
+                if (champSqlRow.teamBannedById == teamPId) { 
+                    if (!(champSqlRow.champId in scoutingItem['BannedByTeam'])) {
+                        scoutingItem['BannedByTeam'][champSqlRow.champId] = 0;
                     }
-                );
-                await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
-                    'SET #key1.#sId.#key2 = :val',
-                    {
-                        '#key1': 'GameLog',
-                        '#sId': seasonPId,
-                        '#key2': 'Matches'
-                    },
-                    {
-                        ':val': gameLogTeamItem
+                    scoutingItem['BannedByTeam'][champSqlRow.champId]++;
+                }
+                else {
+                    if (!(champSqlRow.champId in scoutingItem['BannedAgainstTeam'])) {
+                        scoutingItem['BannedAgainstTeam'][champSqlRow.champId] = 0;
                     }
-                );
-                dynamoDb.updateItem('Team', 'TeamPId', teamPId,
-                    'SET #sLog.#tId = :val',
-                    {
-                        '#sLog': 'StatsLog',
-                        '#tId': tournamentPId
-                    },
-                    {
-                        ':val': tourneyTeamStatsItem
-                    }
-                );
+                    scoutingItem['BannedAgainstTeam'][champSqlRow.champId]++;
+                }
             }
+            // Player Log
+            const playerScoutingSqlList = await mySql.callSProc('playerStatsTotalByTeamIdSeasonId', teamPId, seasonPId);
+            let playerLog = {};
+            for (let playerIdx = 0; playerIdx < playerScoutingSqlList.length; ++playerIdx) {
+                const playerSqlRow = playerScoutingSqlList[playerIdx];
+                const role = playerSqlRow.playerRole;
+                if (!(role in playerLog)) {
+                    playerLog[role] = {};
+                }
+                const { profilePId } = playerSqlRow;
+                const profileHId = profileHashIds.encode(profilePId);
+                if (!(profileHId in playerLog[role])) {
+                    // New entry
+                    playerLog[role][profileHId] = {
+                        'GamesPlayed': playerSqlRow.gamesPlayed,
+                        'TotalKillsPlayer': playerSqlRow.totalKills,
+                        'TotalDeathsPlayer': playerSqlRow.totalDeaths,
+                        'TotalAssistsPlayer': playerSqlRow.totalAssists,
+                        'TotalDamagePlayer': playerSqlRow.totalDamage,
+                        'TotalGoldPlayer': playerSqlRow.totalGold,
+                        'TotalVsPlayer': playerSqlRow.totalVisionScore,
+                        'TotalKillsTeam': playerSqlRow.totalTeamKills,
+                        'TotalDamageTeam': playerSqlRow.totalTeamDamage,
+                        'TotalGoldTeam': playerSqlRow.totalTeamGold,
+                        'TotalVsTeam': playerSqlRow.totalTeamVisionScore,
+                        'ChampsPlayed': {}
+                    };
+                }
+                const champStatsSqlList = await mySql.callSProc('champStatsByProfileIdTeamIdRoleSeasonId', profilePId, teamPId, role, seasonPId, GLOBAL.MINUTE_AT_EARLY);
+                let champsPlayed = playerLog[role][profileHId]['ChampsPlayed'];
+                for (let champIdx = 0; champIdx < champStatsSqlList.length; ++champIdx) {
+                    const champStats = champStatsSqlList[champIdx];
+                    const { champId } = champStats;
+                    champsPlayed[champId] = {};
+                    champsPlayed[champId]['GamesPlayed'] = champStats.gamesPlayed;
+                    champsPlayed[champId]['GamesWon'] = champStats.gamesWin;
+                    champsPlayed[champId]['TotalKills'] = champStats.totalKills;
+                    champsPlayed[champId]['TotalDeaths'] = champStats.totalDeaths;
+                    champsPlayed[champId]['TotalAssists'] = champStats.totalAssists;
+                    champsPlayed[champId]['TotalDuration'] = champStats.totalDuration;
+                    champsPlayed[champId]['TotalGold'] = champStats.totalGold;
+                    champsPlayed[champId]['TotalCreepScore'] = champStats.totalCreepScore;
+                    champsPlayed[champId]['TotalVisionScore'] = champStats.totalVisionScore;
+                    champsPlayed[champId]['GamesPlayedEarly'] = champStats.gamesPlayedOverEarly;
+                    champsPlayed[champId]['TotalCsDiffEarly'] = champStats.totalCsDiffEarly;
+                    champsPlayed[champId]['TotalGoldDiffEarly'] = champStats.totalGoldDiffEarly;
+                    champsPlayed[champId]['TotalXpDiffEarly'] = champStats.totalXpDiffEarly;
+                }
+            }
+            scoutingItem['PlayerLog'] = playerLog;
+            
+            /*  
+                -------------
+                'StatsLog' (TournamentId dependent)
+                -------------
+            */
+            let sqlTeamStatsTotal = (await mySql.callSProc('teamStatsTotalByTournamentPId', teamPId, tournamentPId, GLOBAL.MINUTE_AT_EARLY, GLOBAL.MINUTE_AT_MID))[0];
+            tourneyTeamStatsItem['GamesPlayed'] = sqlTeamStatsTotal.gamesPlayed;
+            tourneyTeamStatsItem['GamesPlayedOverEarly'] = sqlTeamStatsTotal.gamesPlayedOverEarly;
+            tourneyTeamStatsItem['GamesPlayedOverMid'] = sqlTeamStatsTotal.gamesPlayedOverMid;
+            tourneyTeamStatsItem['GamesWon'] = sqlTeamStatsTotal.totalWins;
+            tourneyTeamStatsItem['GamesPlayedOnBlue'] = sqlTeamStatsTotal.gamesPlayedOnBlue;
+            tourneyTeamStatsItem['BlueWins'] = sqlTeamStatsTotal.totalBlueWins;
+            tourneyTeamStatsItem['TotalGameDuration'] = sqlTeamStatsTotal.totalDuration;
+            tourneyTeamStatsItem['TotalXpDiffEarly'] = sqlTeamStatsTotal.totalXpDiffEarly;
+            tourneyTeamStatsItem['TotalXpDiffMid'] = sqlTeamStatsTotal.totalXpDiffMid;
+            tourneyTeamStatsItem['TotalGold'] = sqlTeamStatsTotal.totalGold;
+            tourneyTeamStatsItem['TotalGoldDiffEarly'] = sqlTeamStatsTotal.totalGoldDiffEarly;
+            tourneyTeamStatsItem['TotalGoldDiffMid'] = sqlTeamStatsTotal.totalGoldDiffMid;
+            tourneyTeamStatsItem['TotalCreepScore'] = sqlTeamStatsTotal.totalCreepScore;
+            tourneyTeamStatsItem['TotalCsDiffEarly'] = sqlTeamStatsTotal.totalCsDiffEarly;
+            tourneyTeamStatsItem['TotalCsDiffMid'] = sqlTeamStatsTotal.totalCsDiffMid;
+            tourneyTeamStatsItem['TotalDamageDealt'] = sqlTeamStatsTotal.totalDamageDealt;
+            tourneyTeamStatsItem['TotalFirstBloods'] = sqlTeamStatsTotal.totalFirstBloods;
+            tourneyTeamStatsItem['TotalFirstTowers'] = sqlTeamStatsTotal.totalFirstTowers;
+            tourneyTeamStatsItem['TotalKills'] = sqlTeamStatsTotal.totalKills;
+            tourneyTeamStatsItem['TotalDeaths'] = sqlTeamStatsTotal.totalDeaths;
+            tourneyTeamStatsItem['TotalAssists'] = sqlTeamStatsTotal.totalAssists;
+            tourneyTeamStatsItem['TotalTowersTaken'] = sqlTeamStatsTotal.totalTeamTowers;
+            tourneyTeamStatsItem['TotalTowersLost'] = sqlTeamStatsTotal.totalEnemyTowers;
+            tourneyTeamStatsItem['TotalDragonsTaken'] = sqlTeamStatsTotal.totalTeamDragons;
+            tourneyTeamStatsItem['TotalEnemyDragons'] = sqlTeamStatsTotal.totalEnemyDragons;
+            tourneyTeamStatsItem['TotalHeraldsTaken'] = sqlTeamStatsTotal.totalTeamHeralds;
+            tourneyTeamStatsItem['TotalEnemyHeralds'] = sqlTeamStatsTotal.totalEnemyHeralds;
+            tourneyTeamStatsItem['TotalBaronsTaken'] = sqlTeamStatsTotal.totalTeamBarons;
+            tourneyTeamStatsItem['TotalEnemyBarons'] = sqlTeamStatsTotal.totalEnemyBarons;
+            tourneyTeamStatsItem['TotalVisionScore'] = sqlTeamStatsTotal.totalVisionScore;
+            tourneyTeamStatsItem['TotalWardsPlaced'] = sqlTeamStatsTotal.totalWardsPlaced;
+            tourneyTeamStatsItem['TotalControlWardsBought'] = sqlTeamStatsTotal.totalControlWardsBought;
+            tourneyTeamStatsItem['TotalWardsCleared'] = sqlTeamStatsTotal.totalWardsCleared;
+            tourneyTeamStatsItem['TotalEnemyWardsPlaced'] = sqlTeamStatsTotal.totalEnemyWardsPlaced;
+
+            // Put into DynamoDb
+            await dynamoDb.updateItem('Team', 'TeamPId', teamPId,
+                'SET #gLog.#sId.#mtchs = :val',
+                {
+                    '#gLog': 'GameLog',
+                    '#sId': seasonPId,
+                    '#mtchs': 'Matches'
+                },
+                {
+                    ':val': gameLogTeamItem
+                }
+            );
+            await dynamoDb.updateItem('Team', 'TeamPId', teamPId, 
+                'SET #scout.#sId = :val',
+                {
+                    '#scout': 'Scouting',
+                    '#sId': seasonPId
+                },
+                {
+                    ':val': scoutingItem
+                }
+            );
+            dynamoDb.updateItem('Team', 'TeamPId', teamPId,
+                'SET #sLog.#tId = :val',
+                {
+                    '#sLog': 'StatsLog',
+                    '#tId': tournamentPId
+                },
+                {
+                    ':val': tourneyTeamStatsItem
+                }
+            );
         }
     }
     catch (error) {
@@ -657,291 +597,262 @@ async function updateTournamentItemDynamoDb(tourneyDbObject) {
             Init DynamoDB Items
             -------------------
         */
-        // #region Init Items
-        // Check 'TourneyStats' exists in tourneyDbObject
-        // {MAIN}/tournaments/<tournamentShortName>
-        if (!('TourneyStats' in tourneyDbObject)) {
-            tourneyDbObject['TourneyStats'] = clonedeep(initTourneyStats);
-        }
-        // Check 'PickBans' in tourneyDbObject
-        // {MAIN}/tournament/<tournamentShortName>/pickbans
-        if (!('PickBans' in tourneyDbObject)) {
-            tourneyDbObject['PickBans'] = {};
-        }
-        // Check 'ProfileHIdList' in tourneyDbObject
-        // {MAIN}/tournament/<tournamentShortName>/players
-        if (!('ProfileHIdList' in tourneyDbObject)) {
-            tourneyDbObject['ProfileHIdList'] = [];
-        }
-        // Check 'TeamHIdList' in tourneyDbObject
-        // {MAIN}/tournament/<tournamentShortName>/teams
-        if (!('TeamHIdList' in tourneyDbObject)) {
-            tourneyDbObject['TeamHIdList'] = [];
-        }
-        // Check 'GameLog' in tourneyDbObject
-        // {MAIN}/tournament/<tournamentShortName>/games
-        if (!('GameLog' in tourneyDbObject)) {
-            tourneyDbObject['GameLog'] = {};
-        }
-        // Check 'Leaderboards' exists in tourneyDbObject
-        // {MAIN}/tournaments/<tournamentShortName>
-        if (!('Leaderboards' in tourneyDbObject)) {
-            tourneyDbObject['Leaderboards'] = {};
-        }
-        //#endregion
         // Make shallow copies
-        let tourneyStatsItem = tourneyDbObject['TourneyStats'];             // Add onto
-        let pickBansItem = tourneyDbObject['PickBans'];                     // Add onto
-        let profileHIdSet = new Set(tourneyDbObject['ProfileHIdList']);     // Add onto
-        let teamHIdSet = new Set(tourneyDbObject['TeamHIdList']);           // Add onto
-        let gameLogTourneyItem = tourneyDbObject['GameLog'];                // Add onto
-        let leaderboardsItem = tourneyDbObject['Leaderboards'];
+        let tourneyStatsItem = {
+            'NumberGames': 0,
+            'BlueSideWins': 0,
+            'TotalGameDuration': 0,
+            'CloudDrakes': 0,
+            'OceanDrakes': 0,
+            'InfernalDrakes': 0,
+            'MountainDrakes': 0,
+            'ElderDrakes': 0,
+        }
+        let pickBansItem = {};
+        let profileHIdSet = new Set();
+        let teamHIdSet = new Set();
+        let gameLogTourneyItem = {};
+        let leaderboardsItem = {};
         /*  
             -------------
             Compile Data
             -------------
         */
         let matchStatsSqlList = await mySql.callSProc('matchStatsByTournamentId', tournamentPId);
-        let matchLoaded = false;
         for (let matchIdx = 0; matchIdx < matchStatsSqlList.length; ++matchIdx) {
             let matchStatsSqlRow = matchStatsSqlList[matchIdx];
             let matchPId = matchStatsSqlRow.riotMatchId;
-            if (!(matchPId in gameLogTourneyItem)) {
-                /*  
-                    --------------
-                    'TourneyStats'
-                    --------------
-                */
-                tourneyStatsItem['NumberGames']++;
-                tourneyStatsItem['BlueSideWins'] += matchStatsSqlRow.blueWin;
-                tourneyStatsItem['TotalGameDuration'] += matchStatsSqlRow.duration;
-                tourneyStatsItem['CloudDrakes'] += matchStatsSqlRow.cloudDragons;
-                tourneyStatsItem['OceanDrakes'] += matchStatsSqlRow.oceanDragons;
-                tourneyStatsItem['InfernalDrakes'] += matchStatsSqlRow.infernalDragons;
-                tourneyStatsItem['MountainDrakes'] += matchStatsSqlRow.mountainDragons;
-                tourneyStatsItem['ElderDrakes'] += matchStatsSqlRow.elderDragons;
+            /*  
+                --------------
+                'TourneyStats'
+                --------------
+            */
+            tourneyStatsItem['NumberGames']++;
+            tourneyStatsItem['BlueSideWins'] += matchStatsSqlRow.blueWin;
+            tourneyStatsItem['TotalGameDuration'] += matchStatsSqlRow.duration;
+            tourneyStatsItem['CloudDrakes'] += matchStatsSqlRow.cloudDragons;
+            tourneyStatsItem['OceanDrakes'] += matchStatsSqlRow.oceanDragons;
+            tourneyStatsItem['InfernalDrakes'] += matchStatsSqlRow.infernalDragons;
+            tourneyStatsItem['MountainDrakes'] += matchStatsSqlRow.mountainDragons;
+            tourneyStatsItem['ElderDrakes'] += matchStatsSqlRow.elderDragons;
 
-                let matchObject = await dynamoDb.getItem('Matches', 'MatchPId', matchPId.toString());
-                for (let teamIdx = 0; teamIdx < Object.keys(matchObject['Teams']).length; ++teamIdx) {
-                    let teamId = Object.keys(matchObject['Teams'])[teamIdx];
-                    let teamObject = matchObject['Teams'][teamId];    
-                    /*
-                        --------------
-                        'PickBans'
-                        --------------
-                    */
-                    // Bans
-                    let phase1BanArray = teamObject['Phase1Bans'];
-                    addBansToTourneyItem(pickBansItem, phase1BanArray, teamId, 1);
-                    let phase2BanArray = teamObject['Phase2Bans'];
-                    addBansToTourneyItem(pickBansItem, phase2BanArray, teamId, 2);
-                    // Picks
-                    addWinPicksToTourneyItem(pickBansItem, teamObject, teamId);
-                    /*
-                        --------------
-                        'ProfileHIdList' / 'TeamHIdList'
-                        --------------
-                    */
-                    for (let playerIdx = 0; playerIdx < Object.values(teamObject['Players']).length; ++playerIdx) {
-                        let playerObject = Object.values(teamObject['Players'])[playerIdx];
-                        profileHIdSet.add(playerObject['ProfileHId']);
-                    }
-                    teamHIdSet.add(teamObject['TeamHId']);
-                }
+            let matchObject = await dynamoDb.getItem('Matches', 'MatchPId', matchPId.toString());
+            for (let teamIdx = 0; teamIdx < Object.keys(matchObject['Teams']).length; ++teamIdx) {
+                let teamId = Object.keys(matchObject['Teams'])[teamIdx];
+                let teamObject = matchObject['Teams'][teamId];    
                 /*
                     --------------
-                    'GameLog'
+                    'PickBans'
                     --------------
                 */
-                gameLogTourneyItem[matchPId] = {
-                    'DatePlayed': matchObject.DatePlayed,
-                    'BlueTeamHId': matchObject['Teams'][GLOBAL.BLUE_ID]['TeamHId'],
-                    'RedTeamHId': matchObject['Teams'][GLOBAL.RED_ID]['TeamHId'],
-                    'Duration': matchObject.GameDuration,
-                    'BlueWin': Boolean(matchObject['Teams'][GLOBAL.BLUE_ID]['Win']),
-                };
-                matchLoaded = true;
+                // Bans
+                let phase1BanArray = teamObject['Phase1Bans'];
+                addBansToTourneyItem(pickBansItem, phase1BanArray, teamId, 1);
+                let phase2BanArray = teamObject['Phase2Bans'];
+                addBansToTourneyItem(pickBansItem, phase2BanArray, teamId, 2);
+                // Picks
+                addWinPicksToTourneyItem(pickBansItem, teamObject, teamId);
+                /*
+                    --------------
+                    'ProfileHIdList' / 'TeamHIdList'
+                    --------------
+                */
+                for (let playerIdx = 0; playerIdx < Object.values(teamObject['Players']).length; ++playerIdx) {
+                    let playerObject = Object.values(teamObject['Players'])[playerIdx];
+                    profileHIdSet.add(playerObject['ProfileHId']);
+                }
+                teamHIdSet.add(teamObject['TeamHId']);
             }
-        }
-        if (matchLoaded) {
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'TourneyStats'
-                },
-                {
-                    ':val': tourneyStatsItem
-                }
-            );
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'PickBans'
-                },
-                {
-                    ':val': pickBansItem
-                }
-            );
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'ProfileHIdList'
-                },
-                {
-                    ':val': Array.from(profileHIdSet)
-                }
-            );
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'TeamHIdList'
-                },
-                {
-                    ':val': Array.from(teamHIdSet)
-                }
-            );
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'GameLog'
-                },
-                {
-                    ':val': gameLogTourneyItem
-                }
-            );
-            /*  
-                -----------------
-                'Leaderboards'
-                -----------------
+            /*
+                --------------
+                'GameLog'
+                --------------
             */
-            leaderboardsItem['GameRecords'] = {};
-            let gameRecords = leaderboardsItem['GameRecords'];
-            //#region GameRecords
-            // Shortest Game
-            let shortestGameSqlRow = matchStatsSqlList[0];
-            gameRecords['ShortestGame'] = buildDefaultLeaderboardItem(shortestGameSqlRow);
-            // Longest Game
-            let longestGameSqlRow = matchStatsSqlList[matchStatsSqlList.length - 1];
-            gameRecords['LongestGame'] = buildDefaultLeaderboardItem(longestGameSqlRow);
-            // Most Kills
-            let mostKillsGameSqlRow = (await mySql.callSProc('mostKillsGameByTournamentId', tournamentPId))[0];
-            gameRecords['MostKillGame'] = buildDefaultLeaderboardItem(mostKillsGameSqlRow);
-            gameRecords['MostKillGame']['Kills'] = mostKillsGameSqlRow.totalKills;
-            //#endregion
-            leaderboardsItem['PlayerSingleRecords'] = {};
-            let playerRecords = leaderboardsItem['PlayerSingleRecords'];
-            //#region PlayerSingleRecords
-            // Players Most Damage
-            let playerMostDamageList = [];
-            let mostDamageListSql = await mySql.callSProc('playerMostDamageByTournamentId', tournamentPId);
-            for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
-                let mostDamageRowSql = mostDamageListSql[j];
-                let playerMostDamageItem = buildDefaultLeaderboardItem(mostDamageRowSql);
-                playerMostDamageItem['ProfileHId'] = profileHashIds.encode(mostDamageRowSql.profilePId);
-                playerMostDamageItem['ChampId'] = mostDamageRowSql.champId;
-                playerMostDamageItem['Role'] = mostDamageRowSql.role;
-                playerMostDamageItem['DamagePerMin'] = mostDamageRowSql.dmgDealtPerMin;
-                playerMostDamageItem['DamageDealt'] = mostDamageRowSql.damageDealt;
-                playerMostDamageList.push(playerMostDamageItem);
-            }
-            playerRecords['PlayerMostDamage'] = playerMostDamageList;
-            // Player Most Farm
-            let playerMostFarmList = [];
-            let mostFarmListSql = await mySql.callSProc('playerMostFarmByTournamentId', tournamentPId);
-            for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
-                let mostFarmRowSql = mostFarmListSql[j];
-                let playerMostFarmItem = buildDefaultLeaderboardItem(mostFarmRowSql);
-                playerMostFarmItem['ProfileHId'] = profileHashIds.encode(mostFarmRowSql.profilePId);
-                playerMostFarmItem['ChampId'] = mostFarmRowSql.champId;
-                playerMostFarmItem['Role'] = mostFarmRowSql.role;
-                playerMostFarmItem['CsPerMin'] = mostFarmRowSql.csPerMin;
-                playerMostFarmItem['CreepScore'] = mostFarmRowSql.creepScore;
-                playerMostFarmList.push(playerMostFarmItem);
-            }
-            playerRecords['PlayerMostFarm'] = playerMostFarmList;
-            // Player Most GD@Early
-            let playerMostGDiffEarlyList = [];
-            let mostGDiffEarlyList = await mySql.callSProc('playerMostGDEarlyByTournamentId', tournamentPId);
-            for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
-                let mostGDiffEarlyRowSql = mostGDiffEarlyList[j];
-                let playerMostGDiffEarlyItem = buildDefaultLeaderboardItem(mostGDiffEarlyRowSql);
-                playerMostGDiffEarlyItem['ProfileHId'] = profileHashIds.encode(mostGDiffEarlyRowSql.profilePId);
-                playerMostGDiffEarlyItem['ChampId'] = mostGDiffEarlyRowSql.champId;
-                playerMostGDiffEarlyItem['Role'] = mostGDiffEarlyRowSql.role;
-                playerMostGDiffEarlyItem['GDiffEarly'] = mostGDiffEarlyRowSql.goldDiffEarly;
-                playerMostGDiffEarlyItem['GAtEarly'] = mostGDiffEarlyRowSql.goldAtEarly;
-                playerMostGDiffEarlyList.push(playerMostGDiffEarlyItem);
-            }
-            playerRecords['PlayerMostGoldDiffEarly'] = playerMostGDiffEarlyList;
-            // Player Most XPD@Early
-            let playerMostXpDiffEarlyList = [];
-            let mostXpDiffListSql = await mySql.callSProc('playerMostXPDEarlyByTournamentId', tournamentPId);
-            for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
-                let mostXpDiffEarlyRowSql = mostXpDiffListSql[j];
-                let playerMostXpDiffEarlyItem = buildDefaultLeaderboardItem(mostXpDiffEarlyRowSql);
-                playerMostXpDiffEarlyItem['ProfileHId'] = profileHashIds.encode(mostXpDiffEarlyRowSql.profilePId);
-                playerMostXpDiffEarlyItem['ChampId'] = mostXpDiffEarlyRowSql.champId;
-                playerMostXpDiffEarlyItem['Role'] = mostXpDiffEarlyRowSql.role;
-                playerMostXpDiffEarlyItem['XpDiffEarly'] = mostXpDiffEarlyRowSql.xpDiffEarly;
-                playerMostXpDiffEarlyItem['XpAtEarly'] = mostXpDiffEarlyRowSql.xpAtEarly;
-                playerMostXpDiffEarlyList.push(playerMostXpDiffEarlyItem);
-            }
-            playerRecords['PlayerMostXpDiffEarly'] = playerMostXpDiffEarlyList;
-            // Player Most Vision
-            let playerMostVisionList = [];
-            let mostVisionListSql = await mySql.callSProc('playerMostVisionByTournamentId', tournamentPId);
-            for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
-                let mostVisionRowSql = mostVisionListSql[j];
-                let playerMostVisionItem = buildDefaultLeaderboardItem(mostVisionRowSql);
-                playerMostVisionItem['ProfileHId'] = profileHashIds.encode(mostVisionRowSql.profilePId);
-                playerMostVisionItem['ChampId'] = mostVisionRowSql.champId;
-                playerMostVisionItem['Role'] = mostVisionRowSql.role;
-                playerMostVisionItem['VsPerMin'] = mostVisionRowSql.vsPerMin;
-                playerMostVisionItem['VisionScore'] = mostVisionRowSql.visionScore;
-                playerMostVisionList.push(playerMostVisionItem);
-            }
-            playerRecords['PlayerMostVision'] = playerMostVisionList;
-            //#endregion
-            leaderboardsItem['TeamRecords'] = {};
-            let teamRecords = leaderboardsItem['TeamSingleRecords'];
-            //#region TeamSingleRecords
-            // Team Top Baron Power Plays
-            let teamTopBaronPPList = [];
-            let topBaronPPListSql = await mySql.callSProc('teamTopBaronPPByTournamentId', tournamentPId);
-            for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
-                let topBaronPPRowSql = topBaronPPListSql[j];
-                let teamBaronPPItem = buildDefaultLeaderboardItem(topBaronPPRowSql);
-                teamBaronPPItem['TeamHId'] = teamHashIds.encode(topBaronPPRowSql.teamPId);
-                teamBaronPPItem['Timestamp'] = topBaronPPRowSql.timestamp;
-                teamBaronPPItem['BaronPowerPlay'] = topBaronPPRowSql.baronPowerPlay;
-                teamTopBaronPPList.push(teamBaronPPItem);
-            }
-            teamRecords['TeamTopBaronPowerPlay'] = teamTopBaronPPList;
-            // Team Earliest Towers
-            let teamEarliestTowerList = [];
-            let earliestTowerListSql = await mySql.callSProc('teamEarliestTowerByTournamentId', tournamentPId);
-            for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
-                let earliestTowerRowSql = earliestTowerListSql[j];
-                let teamEarliestTowerItem = buildDefaultLeaderboardItem(earliestTowerRowSql);
-                teamEarliestTowerItem['TeamHId'] = teamHashIds.encode(earliestTowerRowSql.teamPId);
-                teamEarliestTowerItem['Timestamp'] = earliestTowerRowSql.timestamp;
-                teamEarliestTowerItem['Lane'] = earliestTowerRowSql.lane;
-                teamEarliestTowerItem['TowerType'] = earliestTowerRowSql.towerType;
-                teamEarliestTowerList.push(teamEarliestTowerItem);
-            }
-            teamRecords['TeamEarliestTower'] = teamEarliestTowerList;
-            //#endregion
-            // Update DynamoDB
-            await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
-                'SET #key = :val',
-                {
-                    '#key': 'Leaderboards'
-                },
-                {
-                    ':val': leaderboardsItem
-                }
-            );
+            gameLogTourneyItem[matchPId] = {
+                'DatePlayed': matchObject.DatePlayed,
+                'BlueTeamHId': matchObject['Teams'][GLOBAL.BLUE_ID]['TeamHId'],
+                'RedTeamHId': matchObject['Teams'][GLOBAL.RED_ID]['TeamHId'],
+                'Duration': matchObject.GameDuration,
+                'BlueWin': Boolean(matchObject['Teams'][GLOBAL.BLUE_ID]['Win']),
+            };
         }
+        await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+            'SET #tStats = :val',
+            {
+                '#tStats': 'TourneyStats'
+            },
+            {
+                ':val': tourneyStatsItem
+            }
+        );
+        await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+            'SET #pb = :val',
+            {
+                '#pb': 'PickBans'
+            },
+            {
+                ':val': pickBansItem
+            }
+        );
+        await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+            'SET #pHIdList = :val',
+            {
+                '#pHIdList': 'ProfileHIdList'
+            },
+            {
+                ':val': Array.from(profileHIdSet)
+            }
+        );
+        await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+            'SET #tHIdList = :val',
+            {
+                '#tHIdList': 'TeamHIdList'
+            },
+            {
+                ':val': Array.from(teamHIdSet)
+            }
+        );
+        await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+            'SET #gLog = :val',
+            {
+                '#gLog': 'GameLog'
+            },
+            {
+                ':val': gameLogTourneyItem
+            }
+        );
+        /*  
+            -----------------
+            'Leaderboards'
+            -----------------
+        */
+        leaderboardsItem['GameRecords'] = {};
+        let gameRecords = leaderboardsItem['GameRecords'];
+        //#region GameRecords
+        // Shortest Game
+        let shortestGameSqlRow = matchStatsSqlList[0];
+        gameRecords['ShortestGame'] = buildDefaultLeaderboardItem(shortestGameSqlRow);
+        // Longest Game
+        let longestGameSqlRow = matchStatsSqlList[matchStatsSqlList.length - 1];
+        gameRecords['LongestGame'] = buildDefaultLeaderboardItem(longestGameSqlRow);
+        // Most Kills
+        let mostKillsGameSqlRow = (await mySql.callSProc('mostKillsGameByTournamentId', tournamentPId))[0];
+        gameRecords['MostKillGame'] = buildDefaultLeaderboardItem(mostKillsGameSqlRow);
+        gameRecords['MostKillGame']['Kills'] = mostKillsGameSqlRow.totalKills;
+        //#endregion
+        leaderboardsItem['PlayerSingleRecords'] = {};
+        let playerRecords = leaderboardsItem['PlayerSingleRecords'];
+        //#region PlayerSingleRecords
+        // Players Most Damage
+        let playerMostDamageList = [];
+        let mostDamageListSql = await mySql.callSProc('playerMostDamageByTournamentId', tournamentPId);
+        for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
+            let mostDamageRowSql = mostDamageListSql[j];
+            let playerMostDamageItem = buildDefaultLeaderboardItem(mostDamageRowSql);
+            playerMostDamageItem['ProfileHId'] = profileHashIds.encode(mostDamageRowSql.profilePId);
+            playerMostDamageItem['ChampId'] = mostDamageRowSql.champId;
+            playerMostDamageItem['Role'] = mostDamageRowSql.role;
+            playerMostDamageItem['DamagePerMin'] = mostDamageRowSql.dmgDealtPerMin;
+            playerMostDamageItem['DamageDealt'] = mostDamageRowSql.damageDealt;
+            playerMostDamageList.push(playerMostDamageItem);
+        }
+        playerRecords['PlayerMostDamage'] = playerMostDamageList;
+        // Player Most Farm
+        let playerMostFarmList = [];
+        let mostFarmListSql = await mySql.callSProc('playerMostFarmByTournamentId', tournamentPId);
+        for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
+            let mostFarmRowSql = mostFarmListSql[j];
+            let playerMostFarmItem = buildDefaultLeaderboardItem(mostFarmRowSql);
+            playerMostFarmItem['ProfileHId'] = profileHashIds.encode(mostFarmRowSql.profilePId);
+            playerMostFarmItem['ChampId'] = mostFarmRowSql.champId;
+            playerMostFarmItem['Role'] = mostFarmRowSql.role;
+            playerMostFarmItem['CsPerMin'] = mostFarmRowSql.csPerMin;
+            playerMostFarmItem['CreepScore'] = mostFarmRowSql.creepScore;
+            playerMostFarmList.push(playerMostFarmItem);
+        }
+        playerRecords['PlayerMostFarm'] = playerMostFarmList;
+        // Player Most GD@Early
+        let playerMostGDiffEarlyList = [];
+        let mostGDiffEarlyList = await mySql.callSProc('playerMostGDEarlyByTournamentId', tournamentPId);
+        for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
+            let mostGDiffEarlyRowSql = mostGDiffEarlyList[j];
+            let playerMostGDiffEarlyItem = buildDefaultLeaderboardItem(mostGDiffEarlyRowSql);
+            playerMostGDiffEarlyItem['ProfileHId'] = profileHashIds.encode(mostGDiffEarlyRowSql.profilePId);
+            playerMostGDiffEarlyItem['ChampId'] = mostGDiffEarlyRowSql.champId;
+            playerMostGDiffEarlyItem['Role'] = mostGDiffEarlyRowSql.role;
+            playerMostGDiffEarlyItem['GDiffEarly'] = mostGDiffEarlyRowSql.goldDiffEarly;
+            playerMostGDiffEarlyItem['GAtEarly'] = mostGDiffEarlyRowSql.goldAtEarly;
+            playerMostGDiffEarlyList.push(playerMostGDiffEarlyItem);
+        }
+        playerRecords['PlayerMostGoldDiffEarly'] = playerMostGDiffEarlyList;
+        // Player Most XPD@Early
+        let playerMostXpDiffEarlyList = [];
+        let mostXpDiffListSql = await mySql.callSProc('playerMostXPDEarlyByTournamentId', tournamentPId);
+        for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
+            let mostXpDiffEarlyRowSql = mostXpDiffListSql[j];
+            let playerMostXpDiffEarlyItem = buildDefaultLeaderboardItem(mostXpDiffEarlyRowSql);
+            playerMostXpDiffEarlyItem['ProfileHId'] = profileHashIds.encode(mostXpDiffEarlyRowSql.profilePId);
+            playerMostXpDiffEarlyItem['ChampId'] = mostXpDiffEarlyRowSql.champId;
+            playerMostXpDiffEarlyItem['Role'] = mostXpDiffEarlyRowSql.role;
+            playerMostXpDiffEarlyItem['XpDiffEarly'] = mostXpDiffEarlyRowSql.xpDiffEarly;
+            playerMostXpDiffEarlyItem['XpAtEarly'] = mostXpDiffEarlyRowSql.xpAtEarly;
+            playerMostXpDiffEarlyList.push(playerMostXpDiffEarlyItem);
+        }
+        playerRecords['PlayerMostXpDiffEarly'] = playerMostXpDiffEarlyList;
+        // Player Most Vision
+        let playerMostVisionList = [];
+        let mostVisionListSql = await mySql.callSProc('playerMostVisionByTournamentId', tournamentPId);
+        for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
+            let mostVisionRowSql = mostVisionListSql[j];
+            let playerMostVisionItem = buildDefaultLeaderboardItem(mostVisionRowSql);
+            playerMostVisionItem['ProfileHId'] = profileHashIds.encode(mostVisionRowSql.profilePId);
+            playerMostVisionItem['ChampId'] = mostVisionRowSql.champId;
+            playerMostVisionItem['Role'] = mostVisionRowSql.role;
+            playerMostVisionItem['VsPerMin'] = mostVisionRowSql.vsPerMin;
+            playerMostVisionItem['VisionScore'] = mostVisionRowSql.visionScore;
+            playerMostVisionList.push(playerMostVisionItem);
+        }
+        playerRecords['PlayerMostVision'] = playerMostVisionList;
+        //#endregion
+        leaderboardsItem['TeamSingleRecords'] = {};
+        let teamRecords = leaderboardsItem['TeamSingleRecords'];
+        //#region TeamSingleRecords
+        // Team Top Baron Power Plays
+        let teamTopBaronPPList = [];
+        let topBaronPPListSql = await mySql.callSProc('teamTopBaronPPByTournamentId', tournamentPId);
+        for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
+            let topBaronPPRowSql = topBaronPPListSql[j];
+            let teamBaronPPItem = buildDefaultLeaderboardItem(topBaronPPRowSql);
+            teamBaronPPItem['TeamHId'] = teamHashIds.encode(topBaronPPRowSql.teamPId);
+            teamBaronPPItem['Timestamp'] = topBaronPPRowSql.timestamp;
+            teamBaronPPItem['BaronPowerPlay'] = topBaronPPRowSql.baronPowerPlay;
+            teamTopBaronPPList.push(teamBaronPPItem);
+        }
+        teamRecords['TeamTopBaronPowerPlay'] = teamTopBaronPPList;
+        // Team Earliest Towers
+        let teamEarliestTowerList = [];
+        let earliestTowerListSql = await mySql.callSProc('teamEarliestTowerByTournamentId', tournamentPId);
+        for (let j = 0; j < GLOBAL.LEADERBOARD_NUM; ++j) {
+            let earliestTowerRowSql = earliestTowerListSql[j];
+            let teamEarliestTowerItem = buildDefaultLeaderboardItem(earliestTowerRowSql);
+            teamEarliestTowerItem['TeamHId'] = teamHashIds.encode(earliestTowerRowSql.teamPId);
+            teamEarliestTowerItem['Timestamp'] = earliestTowerRowSql.timestamp;
+            teamEarliestTowerItem['Lane'] = earliestTowerRowSql.lane;
+            teamEarliestTowerItem['TowerType'] = earliestTowerRowSql.towerType;
+            teamEarliestTowerList.push(teamEarliestTowerItem);
+        }
+        teamRecords['TeamEarliestTower'] = teamEarliestTowerList;
+        //#endregion
+        // Update DynamoDB
+        await dynamoDb.updateItem('Tournament', 'TournamentPId', tournamentPId,
+            'SET #key = :val',
+            {
+                '#key': 'Leaderboards'
+            },
+            {
+                ':val': leaderboardsItem
+            }
+        );
     }
     catch (error) {
         throw error;

@@ -115,7 +115,7 @@ function updateItemInDynamoDB(tableName, partitionName, key, updateExp, keyName,
         let params = {
             TableName: 'Test',
             Item: {
-                'TestId': key.toString(),
+                'TestId': `${key.toString()}-${updateExp}`,
                 'Value': valueObject,
             },
         };

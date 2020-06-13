@@ -1,3 +1,6 @@
+# 0.10.0
+* overall.js finished
+
 # 0.9.0
 * match.js updated to conform to Client POST requests.
 
