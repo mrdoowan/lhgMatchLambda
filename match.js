@@ -13,7 +13,7 @@ require('dotenv').config();
     Import from other files that are not committed to Github
     Contact doowan about getting a copy of these files
 */
-const inputObjects = require('./external/matchIdList1');
+const inputObjects = require('./external/matchIdList_S2020_PL_SF');
 
 /*  Import helper function modules */
 const GLOBAL = require('./globals');
@@ -78,30 +78,34 @@ exports.handler = async (event) => {
 };
 
 async function main() {
-    try {
-        for (let i = 0; i < inputObjects.length; ++i) {
-            let eventInputObject = inputObjects[i];
-            // Check if MatchPId is already in DynamoDB
-            if (!(await dynamoDb.getItem("Matches", "MatchPId", eventInputObject['RiotMatchId']))) {
-                console.log(`Processing new match ID: ${eventInputObject['RiotMatchId']}`);
-                let matchRiotObject = await kayn.Match.get(parseInt(eventInputObject['RiotMatchId']));
-                let timelineRiotObject = await kayn.Match.timeline(parseInt(eventInputObject['RiotMatchId']));
-                if (!(matchRiotObject == null || timelineRiotObject == null)) {
-                    let lhgMatchData = await promiseLhgMatchObject(eventInputObject, matchRiotObject, timelineRiotObject);
-                    await putMatchDataInDBs(lhgMatchData, eventInputObject);
+    return new Promise(async function (resolve, reject) {
+        try {
+            let matchesLoaded = 0;
+            for (let i = 0; i < inputObjects.length; ++i) {
+                let eventInputObject = inputObjects[i];
+                // Check if MatchPId is already in DynamoDB
+                if (!(await dynamoDb.getItem("Matches", "MatchPId", eventInputObject['RiotMatchId']))) {
+                    console.log(`Processing new match ID: ${eventInputObject['RiotMatchId']}`);
+                    let matchRiotObject = await kayn.Match.get(parseInt(eventInputObject['RiotMatchId']));
+                    let timelineRiotObject = await kayn.Match.timeline(parseInt(eventInputObject['RiotMatchId']));
+                    if (!(matchRiotObject == null || timelineRiotObject == null)) {
+                        let lhgMatchData = await promiseLhgMatchObject(eventInputObject, matchRiotObject, timelineRiotObject);
+                        await putMatchDataInDBs(lhgMatchData, eventInputObject);
+                    }
+                    matchesLoaded++;
                 }
             }
+            resolve(`${matchesLoaded} matches successfully loaded into Match Table.`);
         }
-    }
-    catch (err) {
-        console.log("ERROR thrown! Information below.");
-        console.log("Stack: ", err.stack);
-        console.log("Name: ", err.name);
-        console.log("Message: ", err.message);
-    }
+        catch (err) {
+            console.error("ERROR thrown! Information below.");
+            console.error(err);
+            reject("ERROR");
+        }
+    })
 }
 
-main();
+main().then((response) => { console.log(response); }).catch(() => { console.error('match.js Error happened above'); });
 
 // Returns a Promise
 function putMatchDataInDBs(lhgMatchData, inputObject) {
@@ -204,16 +208,16 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
             let phase2BanArr = [];
             // We're going to work backwards from the Array in the riotJson.
             // Implementation will take assumption that if there's a ban loss, it is always the first X bans
-            // First, we need to sort the array of both team bans
-            let teamBansSorted = teamRiotObject.bans.sort((a, b) => (a.pickTurn > b.pickTurn) ? 1 : -1);
-            for (let j = 0; j < teamBansSorted.length; j++) {
-                let riotIdx = teamBansSorted.length - j - 1; // Start at end of index
-                let banObj = teamBansSorted[riotIdx];
+            // NOTE: Riot API's "pickTurn" is completely bugged
+            let teamBansList = teamRiotObject.bans;
+            for (let j = 0; j < teamBansList.length; j++) {
+                let riotIdx = teamBansList.length - j - 1; // Start at end of index
+                let banObj = teamBansList[riotIdx];
                 if (j < GLOBAL.PHASE2_BANS) {
-                    phase2BanArr.unshift(banObj.championId);
+                    phase2BanArr.push(banObj.championId);
                 }
                 else {
-                    phase1BanArr.unshift(banObj.championId);
+                    phase1BanArr.push(banObj.championId);
                 }
             }
             teamData['Phase1Bans'] = phase1BanArr;
@@ -431,7 +435,8 @@ async function createLhgMatchObject(eventInputObject, matchRiotObject, timelineR
                     }
                 }
                 else if (riotEventObject.type == 'BUILDING_KILL') {
-                    eventItem['TeamId'] = riotEventObject.teamId;
+                    eventItem['TeamId'] = (riotEventObject.teamId == GLOBAL.BLUE_ID) ? parseInt(GLOBAL.RED_ID) : parseInt(GLOBAL.BLUE_ID);   
+                    // FROM RIOT API, THE ABOVE IS TEAM_ID OF TOWER DESTROYED. NOT KILLED (which is what we intend)
                     eventItem['Timestamp'] = riotEventObject.timestamp;
                     eventItem['KillerId'] = riotEventObject.killerId;
                     if (riotEventObject.assistingParticipantIds.length > 0) {

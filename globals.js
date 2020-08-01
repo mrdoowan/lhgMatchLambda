@@ -4,8 +4,8 @@ module.exports = {
     MINUTE_AT_EARLY: 15,     // The minute mark where early game has ended. Calculating @ / Diff
     MINUTE_AT_MID: 25,       // The minute mark where mid game has ended. Calculating @ / Diff
     PHASE2_BANS: 2,
-    BLUE_ID: 100,
-    RED_ID: 200,
+    BLUE_ID: "100",
+    RED_ID: "200",
     SIDE_STRING: { 
         '100': 'Blue', 
         '200': 'Red', 

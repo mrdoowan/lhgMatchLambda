@@ -19,3 +19,11 @@ TBD
 ## overall.js
 
 TBD
+
+## spectate.js
+
+TBD
+
+## summoner.js
+
+TBD
