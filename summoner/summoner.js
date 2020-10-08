@@ -4,7 +4,7 @@
 
 /*  Declaring npm modules */
 const { Kayn, REGIONS, BasicJSCache } = require('kayn');
-require('dotenv').config();
+require('dotenv').config({ path: '../.env' });
 
 /*  Configurations of npm modules */
 const kaynCache = new BasicJSCache();

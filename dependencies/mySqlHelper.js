@@ -1,21 +1,22 @@
 // Modularize the MySQL functions
 module.exports = {
     insertQuery: insertMySQLQuery,
-    callSProc: sProcMySqlQuery
+    callSProc: sProcMySqlQuery,
+    makeQuery: makeSqlQuery,
 }
 
 /*  Declaring MySQL npm modules */
 const mysql = require('mysql'); // Interfacing with mysql DB
-require('dotenv').config();
+require('dotenv').config({ path: '../.env' });
 
 /*  Configurations of npm modules */
 const sqlPool = mysql.createPool({
-    connectionLimit: 10,
+    connectionLimit: 20,
     host: process.env.MYSQL_ENDPOINT,           //process.env.MYSQL_ENDPOINT
     user: process.env.MYSQL_USER,               //process.env.MYSQL_USER
     password: process.env.MYSQL_PASSWORD,       //process.env.MYSQL_PASSWORD
     port: process.env.MYSQL_PORT,               //process.env.MYSQL_PORT
-    database: process.env.MYSQL_DATABASE_STATS  //process.env.MYSQL_DATABASE_STATS
+    database: process.env.MYSQL_DATABASE_STATS, //process.env.MYSQL_DATABASE_STATS
 });
 
 /*  Put 'false' to test without affecting the databases. */
@@ -23,7 +24,11 @@ const INSERT_INTO_MYSQL = true;     // 'true' when comfortable to push into MySQ
 /*  Put 'false' to not debug. */
 const DEBUG_MYSQL = false;
 
-// DETAILED FUNCTION DESCRIPTION XD
+/**
+ * MySQL Insert query
+ * @param {object} queryObject  Each key is the "Column Name" for its values
+ * @param {string} tableName    Table name in MySQL
+ */
 function insertMySQLQuery(queryObject, tableName) {
     if (INSERT_INTO_MYSQL) {
         return new Promise(function(resolve, reject) {
@@ -42,7 +47,7 @@ function insertMySQLQuery(queryObject, tableName) {
                 queryStr += ');';
 
                 sqlPool.getConnection(function(err, connection) {
-                    if (err) { reject(err); }
+                    if (err) { reject(err); return; }
                     connection.query(queryStr, function(error, results, fields) {
                         connection.release();
                         if (error) { throw error; }
@@ -63,7 +68,10 @@ function insertMySQLQuery(queryObject, tableName) {
     }
 }
 
-// DETAILED FUNCTION DESCRIPTION XD
+/**
+ * Call Stored Procedure from MySQL
+ * @param {string} sProcName 
+ */
 function sProcMySqlQuery(sProcName) {
     let argArray = arguments; // Because arguments gets replaced by the function below
     return new Promise(function(resolve, reject) {
@@ -80,7 +88,7 @@ function sProcMySqlQuery(sProcName) {
             queryStr += ");";
 
             sqlPool.getConnection(function(err, connection) {
-                if (err) { reject(err); }
+                if (err) { reject(err); return; }
                 connection.query(queryStr, function(error, results, fields) {
                     connection.release();
                     if (error) { reject(error); }
@@ -95,4 +103,33 @@ function sProcMySqlQuery(sProcName) {
             reject(error);
         }
     });
+}
+
+/**
+ * MySQL query command
+ * @param {string} queryString      Generic MySQL query in string format
+ */
+function makeSqlQuery(queryString) {
+    if (INSERT_INTO_MYSQL) {
+        return new Promise(async function(resolve, reject) {
+            try {
+                sqlPool.getConnection(function(err, connection) {
+                    if (err) { reject(err); return; }
+                    connection.query(queryString, function(error, results, fields) {
+                        connection.release();
+                        if (error) { reject(error); }
+                        console.log("MySQL: Called query command '" + queryString + "'");
+                        resolve(results);
+                    })
+                })
+            }
+            catch (error) {
+                console.error({
+                    error: error,
+                    message: "ERROR - makeQuery '" + queryString + "' Promise rejected."
+                });
+            }
+        })
+    }
+    
 }

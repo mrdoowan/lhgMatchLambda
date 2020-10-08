@@ -5,7 +5,7 @@ module.exports = {
     getProfileHId: getProfileHId,
     getTeamHId: getTeamHId,
 }
-require('dotenv').config();
+require('dotenv').config({ path: '../.env' });
 const Hashids = require('hashids/cjs'); // For hashing and unhashing
 const profileHashIds = new Hashids(process.env.PROFILE_HID_SALT, parseInt(process.env.HID_LENGTH));
 const teamHashIds = new Hashids(process.env.TEAM_HID_SALT, parseInt(process.env.HID_LENGTH));

@@ -9,10 +9,10 @@ const Hashids = require('hashids/cjs'); // For hashing and unhashing
 const clonedeep = require('lodash.clonedeep'); // for deep cloning
 
 /*  Import helper function modules */
-const GLOBAL = require('./globals');
-const dynamoDb = require('./dynamoDbHelper');
-const mySql = require('./mySqlHelper');
-require('dotenv').config();
+const GLOBAL = require('../dependencies/globals');
+const dynamoDb = require('../dependencies/dynamoDbHelper');
+const mySql = require('../dependencies/mySqlHelper');
+require('dotenv').config({ path: '../.env' });
 
 /* 
     Import from other files that are not committed to Github
