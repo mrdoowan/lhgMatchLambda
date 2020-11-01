@@ -571,6 +571,10 @@ function convertRiotToLhgObject(eventInputObject, testing_flag) {
                     resolve(matchObject);
                 }
             }
+            else {
+                console.log(`Match ID: ${eventInputObject['RiotMatchId']} already loaded in Matches DynamoDb table.`);
+                resolve(null);
+            }
         }
         catch (err) {
             reject({
@@ -766,7 +770,7 @@ async function pushIntoMySql(lhgMatchObject, eventInputObject) {
         });
 
         // Confirm
-        console.log(`MySQL: All data from '${lhgMatchData.MatchPId}' inserted.`);
+        console.log(`MySQL: All data from '${lhgMatchObject.MatchPId}' inserted.`);
     }
     catch (error) {
         throw error;

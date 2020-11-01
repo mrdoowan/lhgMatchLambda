@@ -3,14 +3,13 @@
 // Import modules
 const match = require('./match/matchProcess');
 const lodash = require('lodash');
-const assert = require('assert');
 
 // Inputs
-const INPUT_LIST = require('./external/matchIdList_F2020_AL_W4');
+const INPUT_LIST = require('./external/matchIdList_F2020_PL_QF');
 // Tests
 const INPUT_TEST = require('./match/test/testUnit1_Input');
 const OUTPUT_TEST = require('./match/test/testUnit1_Output');
-const TESTING = true;
+const TESTING = false;
 
 async function main() {
     return new Promise(async function (resolve, reject) {
@@ -21,14 +20,14 @@ async function main() {
 
             // 2) Process Match Data from Riot into a DynamoDB Object
             for (let i = 0; i < inputObjects.length; ++i) {
-                const eventInputObject = inputObjects[i];
-                const lhgMatchDataObject = await match.convertRiotToLhgObject(eventInputObject, TESTING);
+                let eventInputObject = inputObjects[i];
+                let lhgMatchDataObject = await match.convertRiotToLhgObject(eventInputObject, TESTING);
                 if (lhgMatchDataObject != null) {
 
                     // 3) Push DynamoDB Object and into MySQL
                     if (!TESTING) {
                         await match.pushIntoDynamoDb(lhgMatchDataObject);
-                        await match.pushIntoMySql(lhgMatchDataObject);
+                        await match.pushIntoMySql(lhgMatchDataObject, eventInputObject);
                     }
                     else {
                         if (lodash.isEqual(lhgMatchDataObject, OUTPUT_TEST)) {
@@ -42,7 +41,6 @@ async function main() {
                     matchesLoaded++;
                 }
             }
-
             resolve(`${matchesLoaded} matches successfully loaded into Match Table.`);
         }
         catch (err) {
