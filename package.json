@@ -4,7 +4,7 @@
   "description": "LHG's AWS Lambda Function to process Riot API match endpoint in NodeJS upon conclusion of a competitive match",
   "main": "index.js",
   "dependencies": {
-    "aws-sdk": "^2.653.0",
+    "aws-sdk": "^2.814.0",
     "hashids": "^2.2.1",
     "kayn": "^0.10.2",
     "lodash": "^4.17.20",
